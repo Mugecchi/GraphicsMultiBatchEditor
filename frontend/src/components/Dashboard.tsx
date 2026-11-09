@@ -206,7 +206,7 @@ export const Dashboard: React.FC = () => {
               className="flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-semibold text-sm border border-indigo-400/30 transition"
             >
               <Sparkles className="w-4 h-4" />
-              {creating ? 'Loading...' : 'Load 5-Event Sample Roadshow'}
+              {creating ? 'Loading...' : 'Load Full 18-Day Orange Campaign (39 Tarps)'}
             </button>
 
             <label className="flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 cursor-pointer transition">

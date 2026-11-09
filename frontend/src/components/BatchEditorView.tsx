@@ -19,6 +19,11 @@ import {
 import { useStudioStore } from '../store/useStudioStore';
 import { api } from '../api/client';
 import { EventRecord, LogoAsset, LogoGroupItem } from '../types/studio';
+import {
+  draftsToEventRecords,
+  GAD_CAMPAIGN_2026_SAMPLE_TEXT,
+  parseStructuredScheduleText,
+} from '../utils/scheduleParser';
 
 export const BatchEditorView: React.FC = () => {
   const {
@@ -43,8 +48,9 @@ export const BatchEditorView: React.FC = () => {
   const [replaceExistingOnPaste, setReplaceExistingOnPaste] = useState(false);
   const [uploadingForEventId, setUploadingForEventId] = useState<string | null>(null);
   const [uploadingGlobalLibrary, setUploadingGlobalLibrary] = useState(false);
-  const [expandedSecondaryFields, setExpandedSecondaryFields] = useState(false);
+  const [expandedSecondaryFields, setExpandedSecondaryFields] = useState(true);
   const [newDynamicColName, setNewDynamicColName] = useState('');
+  const [pasteMode, setPasteMode] = useState<'schedule' | 'titles'>('schedule');
 
   if (!project) return null;
 
@@ -68,7 +74,60 @@ export const BatchEditorView: React.FC = () => {
     visible: true,
   });
 
+  const ensureCanvasElementsForScheduleFields = () => {
+    // Ensure canvas has bound text boxes for lead_office and partners if not yet present
+    const st = useStudioStore.getState();
+    if (!st.project) return;
+    const hasLead = st.project.elements.some(
+      (e) =>
+        e.type === 'text' &&
+        (e.text_props?.binding?.includes('lead_office') ||
+          e.text_props?.content?.includes('lead_office'))
+    );
+    const hasPartners = st.project.elements.some(
+      (e) =>
+        e.type === 'text' &&
+        (e.text_props?.binding?.includes('partners') ||
+          e.text_props?.content?.includes('partners'))
+    );
+    if (!hasLead) {
+      st.addTextElement('custom', 'lead_office', 'Lead Office');
+    }
+    if (!hasPartners) {
+      st.addTextElement('custom', 'partners', 'Partners');
+    }
+  };
+
   const handleBulkPasteCreate = () => {
+    if (!bulkTitlesText.trim()) {
+      alert('Please paste a schedule or event titles first.');
+      return;
+    }
+
+    // Check if text looks like a structured schedule (contains "Activity", "Lead Office:", "Partners:", or "---")
+    const looksStructured =
+      pasteMode === 'schedule' ||
+      /Lead Office\s*:|Activity\s+\d+|-{10,}/i.test(bulkTitlesText);
+
+    if (looksStructured) {
+      const drafts = parseStructuredScheduleText(bulkTitlesText);
+      if (drafts.length > 0) {
+        const records = draftsToEventRecords(
+          drafts,
+          replaceExistingOnPaste ? 0 : project.events.length
+        );
+        if (replaceExistingOnPaste) {
+          setAllEvents(records);
+        } else {
+          setAllEvents([...project.events, ...records]);
+        }
+        ensureCanvasElementsForScheduleFields();
+        setExpandedSecondaryFields(true);
+        setBulkTitlesText('');
+        return;
+      }
+    }
+
     const lines = bulkTitlesText
       .split(/\r?\n/)
       .map((l) => l.trim())
@@ -99,6 +158,16 @@ export const BatchEditorView: React.FC = () => {
       addBulkEventsFromTitles(lines);
     }
     setBulkTitlesText('');
+  };
+
+  const handleLoadGadSampleSchedule = () => {
+    setPasteMode('schedule');
+    setBulkTitlesText(GAD_CAMPAIGN_2026_SAMPLE_TEXT);
+    const drafts = parseStructuredScheduleText(GAD_CAMPAIGN_2026_SAMPLE_TEXT);
+    const records = draftsToEventRecords(drafts, 0);
+    setAllEvents(records);
+    ensureCanvasElementsForScheduleFields();
+    setExpandedSecondaryFields(true);
   };
 
   const handleSetExactRowCount = () => {
@@ -263,48 +332,88 @@ export const BatchEditorView: React.FC = () => {
 
         {/* Top Controls Grid: Quick Row Count + Multi-Line Title Paste + Shared Logo Pool */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Card 1: Multi-Line Bulk Paste or Set Number of Tarpaulins */}
+          {/* Card 1: Smart Schedule Importer / Multi-Line Bulk Paste / Row Count */}
           <div className="lg:col-span-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-1.5">
                   <ListPlus className="w-4 h-4 text-sky-400" />
-                  Quickly Add Titles (Paste List or Set Count)
+                  Smart Schedule Importer & Bulk Title Paste
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Paste one title per line to generate that exact number of tarpaulin variations, or
-                  set how many rows you want.
+                  Paste a multi-day campaign schedule (with <code>Activity 1..N</code>,{' '}
+                  <code>Lead Office</code>, <code>Description</code>, <code>Partners</code>,{' '}
+                  <code>Venue</code>, <code>Dates</code>) or a simple list of titles.
                 </p>
               </div>
 
-              {/* Set Exact Number of Tarpaulins */}
-              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                <span className="text-[11px] text-slate-400 pl-1">How many tarps:</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={countToGenerate}
-                  onChange={(e) => setCountToGenerate(Number(e.target.value))}
-                  className="w-16 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-center font-bold"
-                />
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={handleSetExactRowCount}
-                  className="px-2.5 py-1 rounded bg-sky-500 hover:bg-sky-400 text-white font-semibold text-[11px]"
+                  type="button"
+                  onClick={handleLoadGadSampleSchedule}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition"
+                  title="Instantly load and parse all 39 activities from the full 18-Day Orange Campaign Schedule"
                 >
-                  Set {countToGenerate} Rows
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Load Full 18-Day Orange Campaign (39 Activities)
                 </button>
+
+                {/* Set Exact Number of Tarpaulins */}
+                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                  <span className="text-[11px] text-slate-400 pl-1">Rows:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={200}
+                    value={countToGenerate}
+                    onChange={(e) => setCountToGenerate(Number(e.target.value))}
+                    className="w-14 px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-center font-bold"
+                  />
+                  <button
+                    onClick={handleSetExactRowCount}
+                    className="px-2 py-0.5 rounded bg-sky-500 hover:bg-sky-400 text-white font-semibold text-[11px]"
+                  >
+                    Set
+                  </button>
+                </div>
               </div>
             </div>
 
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setPasteMode('schedule')}
+                className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                  pasteMode === 'schedule'
+                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
+                    : 'text-slate-400 hover:bg-slate-800'
+                }`}
+              >
+                Smart Schedule Parser (Activities / Lead Office / Partners / Venue)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPasteMode('titles')}
+                className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                  pasteMode === 'titles'
+                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
+                    : 'text-slate-400 hover:bg-slate-800'
+                }`}
+              >
+                Simple Line-by-Line Titles
+              </button>
+            </div>
+
             <textarea
-              rows={3}
+              rows={5}
               placeholder={
-                'Paste multiple titles here (one title per line)...\nExample:\n1ST REGIONAL YOUTH LEADERSHIP SUMMIT\n2ND MUNICIPAL AGRI-TRADE FAIR 2026\nANNUAL BARANGAY HEALTH & WELLNESS CARAVAN'
+                pasteMode === 'schedule'
+                  ? 'Paste your structured schedule here (e.g. DAY 1 | NOV 25, 2026 | WED, Activity 1:, Lead Office:, Description:, Partners:, Venue:)...'
+                  : 'Paste multiple titles here (one title per line)...'
               }
               value={bulkTitlesText}
               onChange={(e) => setBulkTitlesText(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500 font-medium"
+              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500 font-mono"
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -319,7 +428,9 @@ export const BatchEditorView: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => addEvent({ title: `NEW TARPAULIN TITLE #${project.events.length + 1}` })}
+                  onClick={() =>
+                    addEvent({ title: `NEW TARPAULIN TITLE #${project.events.length + 1}` })
+                  }
                   className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold flex items-center gap-1"
                 >
                   <Plus className="w-3.5 h-3.5 text-sky-400" />
@@ -330,7 +441,9 @@ export const BatchEditorView: React.FC = () => {
                   className="px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5"
                 >
                   <FilePlus2 className="w-3.5 h-3.5" />
-                  Create Rows from Pasted Titles
+                  {pasteMode === 'schedule'
+                    ? 'Parse Schedule into Tarpaulin Rows'
+                    : 'Create Rows from Pasted Titles'}
                 </button>
               </div>
             </div>
