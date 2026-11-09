@@ -27,7 +27,12 @@ from database import (
     now_iso,
     row_to_project_dict,
 )
-from fonts import get_available_fonts
+from fonts import (
+    CUSTOM_FONTS_DIR,
+    get_available_fonts,
+    get_custom_font_files,
+    invalidate_font_cache,
+)
 from models import (
     CanvasElement,
     EventRecord,
@@ -77,6 +82,7 @@ ensure_dirs()
 init_db()
 
 app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
+app.mount("/custom_fonts", StaticFiles(directory=str(CUSTOM_FONTS_DIR)), name="custom_fonts")
 
 
 def sanitize_filename(name: str) -> str:
@@ -263,7 +269,35 @@ def health_check() -> Dict[str, Any]:
 
 @app.get("/api/fonts")
 def list_fonts() -> Dict[str, Any]:
-    return {"fonts": get_available_fonts()}
+    return {
+        "fonts": get_available_fonts(),
+        "custom_font_files": get_custom_font_files(),
+    }
+
+
+@app.post("/api/fonts/upload")
+async def upload_custom_font(font_file: UploadFile = File(...)) -> Dict[str, Any]:
+    if not font_file.filename:
+        raise HTTPException(status_code=400, detail="No font file provided.")
+    ext = Path(font_file.filename).suffix.lower()
+    if ext not in (".ttf", ".otf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported font format. Please upload a .TTF or .OTF font file.",
+        )
+    raw = await font_file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded font file is empty.")
+
+    safe_name = sanitize_filename(Path(font_file.filename).stem) + ext
+    dest = CUSTOM_FONTS_DIR / safe_name
+    dest.write_bytes(raw)
+    invalidate_font_cache()
+
+    return {
+        "fonts": get_available_fonts(),
+        "custom_font_files": get_custom_font_files(),
+    }
 
 
 @app.get("/api/dashboard")
@@ -1101,7 +1135,11 @@ if (FRONTEND_DIST_DIR / "assets").exists():
 
 @app.get("/{full_path:path}", include_in_schema=False)
 def serve_spa_frontend(full_path: str):
-    if full_path.startswith("api/") or full_path.startswith("storage/"):
+    if (
+        full_path.startswith("api/")
+        or full_path.startswith("storage/")
+        or full_path.startswith("custom_fonts/")
+    ):
         raise HTTPException(status_code=404, detail="Not found")
     if FRONTEND_DIST_DIR.exists():
         requested_file = (FRONTEND_DIST_DIR / full_path).resolve()

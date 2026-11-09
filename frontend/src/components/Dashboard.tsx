@@ -31,8 +31,38 @@ export const Dashboard: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newIsTemplate, setNewIsTemplate] = useState(false);
   const [templateFile, setTemplateFile] = useState<File | null>(null);
+  const [templatePreviewUrl, setTemplatePreviewUrl] = useState<string | null>(null);
+  const [templateDimensions, setTemplateDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const [creating, setCreating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  const handleSelectTemplateFile = (file: File | null) => {
+    if (templatePreviewUrl) {
+      URL.revokeObjectURL(templatePreviewUrl);
+    }
+    setTemplateFile(file);
+    setTemplateDimensions(null);
+    if (!file) {
+      setTemplatePreviewUrl(null);
+      return;
+    }
+    const objUrl = URL.createObjectURL(file);
+    setTemplatePreviewUrl(objUrl);
+
+    const img = new Image();
+    img.onload = () => {
+      setTemplateDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = objUrl;
+
+    if (!newName.trim()) {
+      const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+      setNewName(baseName);
+    }
+  };
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -83,7 +113,7 @@ export const Dashboard: React.FC = () => {
       setShowCreateModal(false);
       setNewName('');
       setNewDesc('');
-      setTemplateFile(null);
+      handleSelectTemplateFile(null);
       setProject(created);
       setActiveView('editor');
     } catch (err: any) {
@@ -461,20 +491,45 @@ export const Dashboard: React.FC = () => {
                 <label className="block text-xs font-semibold mb-1">
                   Upload Background Template (PNG, JPG, WEBP) *
                 </label>
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-sky-500 rounded-xl p-6 cursor-pointer transition bg-slate-50 dark:bg-slate-800/40">
-                  <Upload className="w-7 h-7 text-sky-400 mb-2" />
-                  <span className="text-xs font-medium text-center">
-                    {templateFile
-                      ? `${templateFile.name} (${(templateFile.size / 1024).toFixed(1)} KB)`
-                      : 'Click to select your original PNG tarpaulin template'}
-                  </span>
-                  <span className="text-[11px] text-slate-400 mt-1">
-                    Original pixel dimensions and design are preserved 100% untouched.
-                  </span>
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-sky-500 rounded-xl p-4 cursor-pointer transition bg-slate-50 dark:bg-slate-800/40">
+                  {templatePreviewUrl ? (
+                    <div className="w-full space-y-2.5 text-center">
+                      <div className="relative h-48 w-full bg-checkerboard rounded-lg overflow-hidden flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                        <img
+                          src={templatePreviewUrl}
+                          alt="Template Preview"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                        {templateDimensions && (
+                          <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-slate-900/90 text-emerald-400 font-mono text-[11px] font-bold shadow">
+                            {templateDimensions.width} × {templateDimensions.height} px
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-xs px-1">
+                        <span className="font-semibold text-sky-400 truncate max-w-[260px]">
+                          {templateFile?.name} ({((templateFile?.size || 0) / 1024).toFixed(1)} KB)
+                        </span>
+                        <span className="text-[11px] underline text-slate-400 hover:text-white">
+                          Click to change image
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-7 h-7 text-sky-400 mb-2" />
+                      <span className="text-xs font-medium text-center">
+                        Click to select your original PNG tarpaulin template
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1">
+                        Original pixel dimensions and design are preserved 100% untouched.
+                      </span>
+                    </>
+                  )}
                   <input
                     type="file"
                     accept=".png,.jpg,.jpeg,.webp"
-                    onChange={(e) => setTemplateFile(e.target.files?.[0] || null)}
+                    onChange={(e) => handleSelectTemplateFile(e.target.files?.[0] || null)}
                     className="hidden"
                   />
                 </label>

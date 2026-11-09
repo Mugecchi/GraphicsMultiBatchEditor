@@ -43,6 +43,8 @@ interface StudioState {
   setLeftTab: (tab: LeftTab) => void;
   setProject: (project: ProjectData | null) => void;
   loadFonts: () => Promise<void>;
+  detectLocalBrowserFonts: () => Promise<void>;
+  uploadCustomFont: (file: File) => Promise<string | null>;
   selectElement: (id: string | null, multi?: boolean) => void;
   selectMultiple: (ids: string[]) => void;
   setZoom: (zoom: number) => void;
@@ -180,12 +182,67 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   loadFonts: async () => {
     try {
-      const fonts = await api.getFonts();
-      if (fonts && fonts.length > 0) {
-        set({ availableFonts: fonts });
+      const data = await api.getFonts();
+      const serverFonts = data.fonts || [];
+      if (data.custom_font_files) {
+        for (const cf of data.custom_font_files) {
+          const styleId = `custom_font_${cf.filename.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (!document.getElementById(styleId)) {
+            const st = document.createElement('style');
+            st.id = styleId;
+            st.textContent = `@font-face { font-family: "${cf.family}"; src: url("${cf.url}"); }`;
+            document.head.appendChild(st);
+          }
+        }
+      }
+      if (serverFonts.length > 0) {
+        const merged = Array.from(new Set([...get().availableFonts, ...serverFonts])).sort((a, b) =>
+          a.localeCompare(b)
+        );
+        set({ availableFonts: merged });
       }
     } catch {
       // Keep fallback fonts
+    }
+  },
+
+  detectLocalBrowserFonts: async () => {
+    try {
+      // Use Chromium/Edge/Chrome Local Font Access API if supported by the user's browser
+      const winAny = window as any;
+      if (typeof winAny.queryLocalFonts === 'function') {
+        const localFonts: { family: string }[] = await winAny.queryLocalFonts();
+        const families = localFonts
+          .map((f) => f.family?.trim())
+          .filter((f): f is string => Boolean(f && !f.startsWith('.')));
+        if (families.length > 0) {
+          const merged = Array.from(new Set([...get().availableFonts, ...families])).sort((a, b) =>
+            a.localeCompare(b)
+          );
+          set({
+            availableFonts: merged,
+            statusMessage: `Loaded ${merged.length} available fonts from your device`,
+          });
+          return;
+        }
+      }
+      await get().loadFonts();
+      set({ statusMessage: `Refreshed ${get().availableFonts.length} available fonts` });
+    } catch {
+      await get().loadFonts();
+    }
+  },
+
+  uploadCustomFont: async (file: File) => {
+    try {
+      const data = await api.uploadFont(file);
+      await get().loadFonts();
+      const newest = data.custom_font_files?.[data.custom_font_files.length - 1]?.family || null;
+      set({ statusMessage: `Uploaded font "${file.name}"` });
+      return newest;
+    } catch (err: any) {
+      set({ statusMessage: `Font upload failed: ${err?.message}` });
+      return null;
     }
   },
 

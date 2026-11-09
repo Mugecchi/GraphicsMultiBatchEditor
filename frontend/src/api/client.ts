@@ -20,10 +20,28 @@ export const api = {
     return handleResponse<DashboardSummary>(res);
   },
 
-  async getFonts(): Promise<string[]> {
+  async getFonts(): Promise<{
+    fonts: string[];
+    custom_font_files: { family: string; filename: string; url: string }[];
+  }> {
     const res = await fetch('/api/fonts');
-    const data = await handleResponse<{ fonts: string[] }>(res);
-    return data.fonts;
+    return handleResponse<{
+      fonts: string[];
+      custom_font_files: { family: string; filename: string; url: string }[];
+    }>(res);
+  },
+
+  async uploadFont(file: File): Promise<{
+    fonts: string[];
+    custom_font_files: { family: string; filename: string; url: string }[];
+  }> {
+    const fd = new FormData();
+    fd.append('font_file', file);
+    const res = await fetch('/api/fonts/upload', {
+      method: 'POST',
+      body: fd,
+    });
+    return handleResponse(res);
   },
 
   async createProject(formData: FormData): Promise<ProjectData> {

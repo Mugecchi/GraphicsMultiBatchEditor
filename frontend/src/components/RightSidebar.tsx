@@ -44,6 +44,8 @@ export const RightSidebar: React.FC = () => {
     replaceLogoInGroup,
     setElementOverride,
     clearElementOverride,
+    detectLocalBrowserFonts,
+    uploadCustomFont,
   } = useStudioStore();
 
   if (!project) return null;
@@ -338,21 +340,56 @@ export const RightSidebar: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-slate-400">Font Family</label>
+                  <div className="col-span-2">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="text-[10px] text-slate-400">
+                        Font Family ({availableFonts.length} available)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={detectLocalBrowserFonts}
+                          className="text-[10px] text-sky-400 hover:underline font-medium"
+                          title="Detect all fonts installed on your computer"
+                        >
+                          Detect My PC Fonts
+                        </button>
+                        <label
+                          className="text-[10px] text-emerald-400 hover:underline font-medium cursor-pointer"
+                          title="Upload a custom .TTF or .OTF font file"
+                        >
+                          + Upload .TTF
+                          <input
+                            type="file"
+                            accept=".ttf,.otf"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const fam = await uploadCustomFont(file);
+                              if (fam) {
+                                updateTextProp({ font_family: fam });
+                              }
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
                     <select
                       value={tp.font_family}
                       onChange={(e) => updateTextProp({ font_family: e.target.value })}
+                      style={{ fontFamily: tp.font_family }}
                       className="w-full px-2 py-1.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
                     >
                       {availableFonts.map((f) => (
-                        <option key={f} value={f}>
+                        <option key={f} value={f} style={{ fontFamily: f }}>
                           {f}
                         </option>
                       ))}
                     </select>
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <label className="block text-[10px] text-slate-400">Font Size (px)</label>
                     <input
                       type="number"
