@@ -151,11 +151,17 @@ def compute_logo_group_layout(
                 nh = float(item.get("natural_height") or 100)
                 ar = nw / max(1.0, nh)
             scale_mult = float(item.get("scale_override") or 1.0)
-            h = permitted_h * scale_mult
-            w = h * ar
-            if w > permitted_w:
-                w = permitted_w
-                h = w / ar
+            w_scale = float(item.get("width_scale") or 1.0)
+            h_scale = float(item.get("height_scale") or 1.0)
+
+            base_h = permitted_h
+            base_w = base_h * ar
+            if base_w > permitted_w:
+                base_w = permitted_w
+                base_h = base_w / ar
+
+            h = max(4.0, base_h * scale_mult * h_scale)
+            w = max(4.0, base_w * scale_mult * w_scale)
             sized_items.append({"item": item, "w": w, "h": h, "ar": ar})
 
         # Step 2: Check if total width + gaps exceeds inner_w; if so, proportionally scale down the row
@@ -410,7 +416,7 @@ def render_text_element_onto_canvas(
     base_img.alpha_composite(layer, (int(round(box_x)), int(round(box_y))))
 
 
-def open_logo_image(relative_path: str) -> Optional[Image.Image]:
+def open_logo_image(relative_path: str, crop_transparent: bool = True) -> Optional[Image.Image]:
     if not relative_path:
         return None
     full_path = STORAGE_DIR / relative_path
@@ -418,7 +424,27 @@ def open_logo_image(relative_path: str) -> Optional[Image.Image]:
         return None
     try:
         img = Image.open(full_path)
-        return img.convert("RGBA")
+        rgba = img.convert("RGBA")
+        if crop_transparent:
+            orig_w, orig_h = rgba.size
+            alpha = rgba.getchannel("A")
+            mask = alpha.point(lambda p: 255 if p > 10 else 0)
+            bbox = mask.getbbox()
+            if bbox:
+                content_w = bbox[2] - bbox[0]
+                content_h = bbox[3] - bbox[1]
+                if (
+                    content_w >= 8
+                    and content_h >= 8
+                    and (content_w < orig_w * 0.88 or content_h < orig_h * 0.88)
+                ):
+                    pad = 2
+                    left = max(0, bbox[0] - pad)
+                    top = max(0, bbox[1] - pad)
+                    right = min(rgba.width, bbox[2] + pad)
+                    bottom = min(rgba.height, bbox[3] + pad)
+                    rgba = rgba.crop((left, top, right, bottom))
+        return rgba
     except Exception:
         return None
 

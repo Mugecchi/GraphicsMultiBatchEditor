@@ -158,12 +158,18 @@ export function computeLogoGroupLayout(
         ar = nw / Math.max(1.0, nh);
       }
       const scaleMult = item.scale_override || 1.0;
-      let h = permittedH * scaleMult;
-      let w = h * ar;
-      if (w > permittedW) {
-        w = permittedW;
-        h = w / ar;
+      const wScale = item.width_scale || 1.0;
+      const hScale = item.height_scale || 1.0;
+
+      let baseH = permittedH;
+      let baseW = baseH * ar;
+      if (baseW > permittedW) {
+        baseW = permittedW;
+        baseH = baseW / ar;
       }
+
+      const h = Math.max(4.0, baseH * scaleMult * hScale);
+      const w = Math.max(4.0, baseW * scaleMult * wScale);
       sizedItems.push({ item, w, h, ar });
     }
 

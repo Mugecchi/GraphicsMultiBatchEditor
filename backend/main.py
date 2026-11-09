@@ -585,16 +585,39 @@ async def upload_project_logos(
             with Image.open(io.BytesIO(raw_bytes)) as img:
                 img.verify()
             with Image.open(io.BytesIO(raw_bytes)) as img2:
-                nw, nh = img2.size
-                fmt = img2.format or "PNG"
+                rgba = img2.convert("RGBA")
+                orig_w, orig_h = rgba.size
+                # Only auto-trim if the uploaded logo has significant excess transparent border (>12% of width or height)
+                alpha = rgba.getchannel("A")
+                mask = alpha.point(lambda p: 255 if p > 10 else 0)
+                bbox = mask.getbbox()
+                if bbox:
+                    content_w = bbox[2] - bbox[0]
+                    content_h = bbox[3] - bbox[1]
+                    if (
+                        content_w >= 8
+                        and content_h >= 8
+                        and (content_w < orig_w * 0.88 or content_h < orig_h * 0.88)
+                    ):
+                        pad = 2
+                        left = max(0, bbox[0] - pad)
+                        top = max(0, bbox[1] - pad)
+                        right = min(rgba.width, bbox[2] + pad)
+                        bottom = min(rgba.height, bbox[3] + pad)
+                        rgba = rgba.crop((left, top, right, bottom))
+                nw, nh = rgba.size
+                fmt = "PNG"
+                trimmed_buf = io.BytesIO()
+                rgba.save(trimmed_buf, format="PNG")
+                save_bytes = trimmed_buf.getvalue()
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Invalid logo image '{upload.filename}': {exc}")
 
         asset_id = f"logo_{uuid.uuid4().hex[:8]}"
-        safe_name = f"{asset_id}_{sanitize_filename(Path(upload.filename).stem)}{ext}"
+        safe_name = f"{asset_id}_{sanitize_filename(Path(upload.filename).stem)}.png"
         rel_path = f"projects/{project_id}/logos/{safe_name}"
         dest_path = STORAGE_DIR / rel_path
-        dest_path.write_bytes(raw_bytes)
+        dest_path.write_bytes(save_bytes)
 
         asset = LogoAsset(
             id=asset_id,

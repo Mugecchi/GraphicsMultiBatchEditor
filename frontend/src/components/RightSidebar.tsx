@@ -42,6 +42,8 @@ export const RightSidebar: React.FC = () => {
     removeLogoFromGroup,
     reorderLogoInGroup,
     replaceLogoInGroup,
+    updateLogoInGroup,
+    updateEventLogo,
     setElementOverride,
     clearElementOverride,
     detectLocalBrowserFonts,
@@ -901,87 +903,242 @@ export const RightSidebar: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Ordered Logos Inside Group */}
-                <div className="space-y-1.5 pt-2">
-                  <div className="text-[11px] font-semibold text-slate-400">
-                    Logos in Group (Reorder / Replace / Remove)
-                  </div>
-                  {gp.logos.length === 0 ? (
-                    <div className="p-3 rounded border border-dashed border-slate-700 text-center text-[11px] text-slate-500">
-                      Open the "Logos" tab on the left to upload or add logos to this group.
+                {/* Ordered Logos Inside Group + Per-Logo Size/Width/Height Controls */}
+                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] font-semibold text-slate-400">
+                      Individual Logos (Size, Width/Height & Order)
                     </div>
-                  ) : (
-                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                      {gp.logos.map((item, idx) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-1.5 rounded bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <img
-                              src={item.url}
-                              alt={item.name}
-                              className="w-7 h-7 object-contain bg-checkerboard rounded p-0.5 shrink-0"
-                            />
-                            <div className="truncate">
-                              <div className="text-[11px] font-medium truncate">{item.name}</div>
-                              {project.assets.length > 1 && (
-                                <select
-                                  value={item.asset_id}
-                                  onChange={(e) => {
-                                    const replacement = project.assets.find(
-                                      (a) => a.id === e.target.value
-                                    );
-                                    if (replacement) {
-                                      replaceLogoInGroup(el.id, item.id, replacement);
+                    {activeEvent?.logos && activeEvent.logos.length > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 font-semibold">
+                        Custom Row Logos
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Adjust <strong>Size %</strong> or fine-tune <strong>W% / H%</strong> on any round
+                    or wide logo so all logos look visually uniform.
+                  </p>
+                  {(() => {
+                    const isEditingEventLogos = Boolean(
+                      activeEvent?.logos && activeEvent.logos.length > 0
+                    );
+                    const activeLogosList = isEditingEventLogos
+                      ? activeEvent!.logos
+                      : gp.logos;
+
+                    const handlePatchLogoItem = (
+                      itemId: string,
+                      patch: Partial<(typeof activeLogosList)[0]>
+                    ) => {
+                      if (isEditingEventLogos && activeEvent) {
+                        updateEventLogo(activeEvent.id, itemId, patch, true);
+                      } else {
+                        updateLogoInGroup(el.id, itemId, patch, true);
+                      }
+                    };
+
+                    if (activeLogosList.length === 0) {
+                      return (
+                        <div className="p-3 rounded border border-dashed border-slate-700 text-center text-[11px] text-slate-500">
+                          Open the "Logos" tab on the left to upload or add logos to this group.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                        {activeLogosList.map((item, idx) => {
+                          const scalePct = Math.round((item.scale_override ?? 1) * 100);
+                          const wScalePct = Math.round((item.width_scale ?? 1) * 100);
+                          const hScalePct = Math.round((item.height_scale ?? 1) * 100);
+                          const isSquareForced = Math.abs((item.aspect_ratio || 1) - 1) < 0.01;
+
+                          return (
+                            <div
+                              key={item.id}
+                              className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <img
+                                    src={item.url}
+                                    alt={item.name}
+                                    className="w-8 h-8 object-contain bg-checkerboard rounded p-0.5 shrink-0"
+                                  />
+                                  <div className="truncate">
+                                    <div className="text-[11px] font-semibold truncate">
+                                      {item.name}
+                                    </div>
+                                    {!isEditingEventLogos && project.assets.length > 1 && (
+                                      <select
+                                        value={item.asset_id}
+                                        onChange={(e) => {
+                                          const replacement = project.assets.find(
+                                            (a) => a.id === e.target.value
+                                          );
+                                          if (replacement) {
+                                            replaceLogoInGroup(el.id, item.id, replacement);
+                                          }
+                                        }}
+                                        className="text-[9px] bg-transparent text-sky-400 outline-none cursor-pointer"
+                                        title="Replace with another uploaded logo"
+                                      >
+                                        {project.assets.map((a) => (
+                                          <option
+                                            key={a.id}
+                                            value={a.id}
+                                            className="bg-slate-900 text-slate-100"
+                                          >
+                                            Swap: {a.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handlePatchLogoItem(item.id, {
+                                        aspect_ratio: isSquareForced
+                                          ? item.natural_width /
+                                            Math.max(1, item.natural_height)
+                                          : 1.0,
+                                        width_scale: 1.0,
+                                        height_scale: 1.0,
+                                      })
                                     }
-                                  }}
-                                  className="text-[9px] bg-transparent text-sky-400 outline-none cursor-pointer"
-                                  title="Replace with another uploaded logo"
-                                >
-                                  {project.assets.map((a) => (
-                                    <option
-                                      key={a.id}
-                                      value={a.id}
-                                      className="bg-slate-900 text-slate-100"
-                                    >
-                                      Swap: {a.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition ${
+                                      isSquareForced
+                                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                                        : 'bg-slate-200 dark:bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                    }`}
+                                    title="Force 1:1 equal height and width (ideal for round/circular seals)"
+                                  >
+                                    1:1 Round
+                                  </button>
+                                  {!isEditingEventLogos && (
+                                    <>
+                                      <button
+                                        onClick={() => reorderLogoInGroup(el.id, item.id, 'left')}
+                                        disabled={idx === 0}
+                                        className="p-1 rounded hover:bg-slate-700 disabled:opacity-30"
+                                        title="Move Earlier"
+                                      >
+                                        <ArrowLeft className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        onClick={() => reorderLogoInGroup(el.id, item.id, 'right')}
+                                        disabled={idx === activeLogosList.length - 1}
+                                        className="p-1 rounded hover:bg-slate-700 disabled:opacity-30"
+                                        title="Move Later"
+                                      >
+                                        <ArrowRight className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        onClick={() => removeLogoFromGroup(el.id, item.id)}
+                                        className="p-1 rounded hover:bg-rose-500/20 text-rose-400"
+                                        title="Remove from Group"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Per-logo Individual Scale, Width %, and Height % controls */}
+                              <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px]">
+                                <div>
+                                  <div className="flex items-center justify-between text-slate-400">
+                                    <span>Size</span>
+                                    <span className="font-mono text-sky-400">{scalePct}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={30}
+                                    max={220}
+                                    step={5}
+                                    value={scalePct}
+                                    onChange={(e) =>
+                                      handlePatchLogoItem(item.id, {
+                                        scale_override: Number(e.target.value) / 100,
+                                      })
+                                    }
+                                    className="w-full accent-sky-500 cursor-pointer"
+                                    title="Overall scale multiplier for this specific logo"
+                                  />
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center justify-between text-slate-400">
+                                    <span>Width</span>
+                                    <span className="font-mono text-indigo-400">{wScalePct}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={40}
+                                    max={200}
+                                    step={5}
+                                    value={wScalePct}
+                                    onChange={(e) =>
+                                      handlePatchLogoItem(item.id, {
+                                        width_scale: Number(e.target.value) / 100,
+                                      })
+                                    }
+                                    className="w-full accent-indigo-500 cursor-pointer"
+                                    title="Adjust individual logo width independently"
+                                  />
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center justify-between text-slate-400">
+                                    <span>Height</span>
+                                    <span className="font-mono text-emerald-400">{hScalePct}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={40}
+                                    max={200}
+                                    step={5}
+                                    value={hScalePct}
+                                    onChange={(e) =>
+                                      handlePatchLogoItem(item.id, {
+                                        height_scale: Number(e.target.value) / 100,
+                                      })
+                                    }
+                                    className="w-full accent-emerald-500 cursor-pointer"
+                                    title="Adjust individual logo height independently"
+                                  />
+                                </div>
+                              </div>
+
+                              {(scalePct !== 100 || wScalePct !== 100 || hScalePct !== 100) && (
+                                <div className="flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handlePatchLogoItem(item.id, {
+                                        scale_override: 1.0,
+                                        width_scale: 1.0,
+                                        height_scale: 1.0,
+                                      })
+                                    }
+                                    className="text-[9px] text-slate-400 hover:text-sky-400 underline"
+                                  >
+                                    Reset to 100%
+                                  </button>
+                                </div>
                               )}
                             </div>
-                          </div>
-
-                          <div className="flex items-center gap-0.5 shrink-0">
-                            <button
-                              onClick={() => reorderLogoInGroup(el.id, item.id, 'left')}
-                              disabled={idx === 0}
-                              className="p-1 rounded hover:bg-slate-700 disabled:opacity-30"
-                              title="Move Earlier"
-                            >
-                              <ArrowLeft className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => reorderLogoInGroup(el.id, item.id, 'right')}
-                              disabled={idx === gp.logos.length - 1}
-                              className="p-1 rounded hover:bg-slate-700 disabled:opacity-30"
-                              title="Move Later"
-                            >
-                              <ArrowRight className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => removeLogoFromGroup(el.id, item.id)}
-                              className="p-1 rounded hover:bg-rose-500/20 text-rose-400"
-                              title="Remove from Group"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             );

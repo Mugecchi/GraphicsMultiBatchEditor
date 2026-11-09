@@ -102,6 +102,18 @@ interface StudioState {
   removeLogoFromGroup: (groupElementId: string, itemId: string) => void;
   reorderLogoInGroup: (groupElementId: string, itemId: string, direction: 'left' | 'right') => void;
   replaceLogoInGroup: (groupElementId: string, itemId: string, newAsset: LogoAsset) => void;
+  updateLogoInGroup: (
+    groupElementId: string,
+    itemId: string,
+    patch: Partial<LogoGroupItem>,
+    recordHistory?: boolean
+  ) => void;
+  updateEventLogo: (
+    eventId: string,
+    itemId: string,
+    patch: Partial<LogoGroupItem>,
+    recordHistory?: boolean
+  ) => void;
 
   // Event Management & Overrides
   setActiveEvent: (eventId: string) => void;
@@ -1066,6 +1078,39 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       },
       true
     );
+  },
+
+  updateLogoInGroup: (groupElementId, itemId, patch, recordHistory = false) => {
+    const { updateElementNested } = get();
+    updateElementNested(
+      groupElementId,
+      (el) => {
+        if (!el.logo_group_props) return el;
+        el.logo_group_props.logos = el.logo_group_props.logos.map((item) =>
+          item.id === itemId ? { ...item, ...patch } : item
+        );
+        return el;
+      },
+      recordHistory
+    );
+  },
+
+  updateEventLogo: (eventId, itemId, patch, recordHistory = false) => {
+    const { project, pushHistory } = get();
+    if (!project) return;
+    if (recordHistory) pushHistory();
+    const events = project.events.map((ev) => {
+      if (ev.id !== eventId) return ev;
+      const logos = (ev.logos || []).map((item) =>
+        item.id === itemId ? { ...item, ...patch } : item
+      );
+      return { ...ev, logos };
+    });
+    set({
+      project: { ...project, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   setActiveEvent: (eventId) => {

@@ -16,7 +16,10 @@ type InteractionMode =
   | 'resize-s'
   | 'resize-sw'
   | 'resize-w'
-  | 'rotate';
+  | 'rotate'
+  | 'logo-item-scale'
+  | 'logo-item-width'
+  | 'logo-item-height';
 
 interface SnapGuide {
   axis: 'x' | 'y';
@@ -32,6 +35,8 @@ export const CenterCanvas: React.FC = () => {
     updateElement,
     addLogoElement,
     addAssetsToLogoGroup,
+    updateLogoInGroup,
+    updateEventLogo,
     pushHistory,
     zoom,
     setZoom,
@@ -52,8 +57,15 @@ export const CenterCanvas: React.FC = () => {
     startClientY: number;
     initialEl: CanvasElement;
     initialPan: { x: number; y: number };
+    logoItemId?: string;
+    initialLogoScale?: number;
+    initialLogoWScale?: number;
+    initialLogoHScale?: number;
+    baseLogoPxW?: number;
+    baseLogoPxH?: number;
   } | null>(null);
 
+  const [selectedLogoItemId, setSelectedLogoItemId] = useState<string | null>(null);
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
 
   if (!project) return null;
@@ -107,6 +119,52 @@ export const CenterCanvas: React.FC = () => {
       const dyPx = e.clientY - interaction.startClientY;
       const dxPct = (dxPx / displayW) * 100;
       const dyPct = (dyPx / displayH) * 100;
+
+      if (
+        (interaction.mode === 'logo-item-scale' ||
+          interaction.mode === 'logo-item-width' ||
+          interaction.mode === 'logo-item-height') &&
+        interaction.logoItemId
+      ) {
+        const refW = Math.max(24, interaction.baseLogoPxW || 60);
+        const refH = Math.max(24, interaction.baseLogoPxH || 60);
+        const isEventCustomLogos = Boolean(activeEvent?.logos && activeEvent.logos.length > 0);
+        const patchFn = (patch: {
+          scale_override?: number;
+          width_scale?: number;
+          height_scale?: number;
+        }) => {
+          if (isEventCustomLogos && activeEvent) {
+            updateEventLogo(activeEvent.id, interaction.logoItemId!, patch, false);
+          } else {
+            updateLogoInGroup(el.id, interaction.logoItemId!, patch, false);
+          }
+        };
+
+        if (interaction.mode === 'logo-item-scale') {
+          const delta = Math.max(dxPx / refW, dyPx / refH);
+          const nextScale = Math.max(
+            0.25,
+            Math.min(2.5, Number(((interaction.initialLogoScale ?? 1) + delta).toFixed(2)))
+          );
+          patchFn({ scale_override: nextScale });
+        } else if (interaction.mode === 'logo-item-width') {
+          const deltaW = dxPx / refW;
+          const nextWScale = Math.max(
+            0.3,
+            Math.min(2.5, Number(((interaction.initialLogoWScale ?? 1) + deltaW).toFixed(2)))
+          );
+          patchFn({ width_scale: nextWScale });
+        } else if (interaction.mode === 'logo-item-height') {
+          const deltaH = dyPx / refH;
+          const nextHScale = Math.max(
+            0.3,
+            Math.min(2.5, Number(((interaction.initialLogoHScale ?? 1) + deltaH).toFixed(2)))
+          );
+          patchFn({ height_scale: nextHScale });
+        }
+        return;
+      }
 
       const SNAP_THRESH = 0.85; // percentage threshold for snapping
       const newGuides: SnapGuide[] = [];
@@ -603,28 +661,133 @@ export const CenterCanvas: React.FC = () => {
                 return (
                   <div
                     style={{ opacity: gp.opacity }}
-                    className="relative w-full h-full overflow-hidden pointer-events-none"
+                    className="relative w-full h-full overflow-hidden"
                   >
                     {placements.length === 0 ? (
-                      <div className="w-full h-full border border-dashed border-sky-400/50 rounded flex items-center justify-center text-[11px] text-sky-300 bg-sky-950/30">
+                      <div className="w-full h-full border border-dashed border-sky-400/50 rounded flex items-center justify-center text-[11px] text-sky-300 bg-sky-950/30 pointer-events-none">
                         Logo Group — Upload or add logos from the Logos tab
                       </div>
                     ) : (
-                      placements.map((pl) => (
-                        <img
-                          key={pl.id}
-                          src={pl.url}
-                          alt={pl.name}
-                          style={{
-                            position: 'absolute',
-                            left: `${pl.x}px`,
-                            top: `${pl.y}px`,
-                            width: `${pl.width}px`,
-                            height: `${pl.height}px`,
-                          }}
-                          className="object-contain select-none"
-                        />
-                      ))
+                      placements.map((pl) => {
+                        const rawItem = logosList.find((l) => l.id === pl.id);
+                        const isLogoSelected = isSelected && selectedLogoItemId === pl.id;
+                        return (
+                          <div
+                            key={pl.id}
+                            onMouseDown={(e) => {
+                              if (isSelected) {
+                                e.stopPropagation();
+                                setSelectedLogoItemId(pl.id);
+                              }
+                            }}
+                            style={{
+                              position: 'absolute',
+                              left: `${pl.x}px`,
+                              top: `${pl.y}px`,
+                              width: `${pl.width}px`,
+                              height: `${pl.height}px`,
+                            }}
+                            className={`group/logo ${
+                              isSelected ? 'cursor-pointer' : 'pointer-events-none'
+                            } ${
+                              isLogoSelected
+                                ? 'ring-2 ring-amber-400 bg-amber-500/10 rounded-sm'
+                                : isSelected
+                                ? 'hover:ring-1 hover:ring-amber-400/60 rounded-sm'
+                                : ''
+                            }`}
+                            title={
+                              isSelected
+                                ? `${pl.name} — Click to resize this individual logo`
+                                : pl.name
+                            }
+                          >
+                            <img
+                              src={pl.url}
+                              alt={pl.name}
+                              draggable={false}
+                              style={{
+                                objectFit:
+                                  rawItem?.width_scale &&
+                                  rawItem?.height_scale &&
+                                  Math.abs(rawItem.width_scale - rawItem.height_scale) > 0.02
+                                    ? 'fill'
+                                    : 'contain',
+                              }}
+                              className="w-full h-full select-none pointer-events-none"
+                            />
+
+                            {/* Interactive Individual Logo Resize Handles when clicked inside selected Logo Group */}
+                            {isLogoSelected && !el.locked && (
+                              <>
+                                {/* Corner handle: proportional individual scale */}
+                                <div
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    pushHistory();
+                                    setInteraction({
+                                      mode: 'logo-item-scale',
+                                      elementId: el.id,
+                                      startClientX: e.clientX,
+                                      startClientY: e.clientY,
+                                      initialEl: JSON.parse(JSON.stringify(el)),
+                                      initialPan: { ...pan },
+                                      logoItemId: pl.id,
+                                      initialLogoScale: rawItem?.scale_override ?? 1,
+                                      baseLogoPxW: pl.width,
+                                      baseLogoPxH: pl.height,
+                                    });
+                                  }}
+                                  className="absolute -bottom-1.5 -right-1.5 w-3 h-3 rounded-full bg-amber-400 border-2 border-slate-900 shadow cursor-nwse-resize z-30"
+                                  title="Drag to resize this logo proportionally"
+                                />
+                                {/* Right handle: individual logo width */}
+                                <div
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    pushHistory();
+                                    setInteraction({
+                                      mode: 'logo-item-width',
+                                      elementId: el.id,
+                                      startClientX: e.clientX,
+                                      startClientY: e.clientY,
+                                      initialEl: JSON.parse(JSON.stringify(el)),
+                                      initialPan: { ...pan },
+                                      logoItemId: pl.id,
+                                      initialLogoWScale: rawItem?.width_scale ?? 1,
+                                      baseLogoPxW: pl.width,
+                                      baseLogoPxH: pl.height,
+                                    });
+                                  }}
+                                  className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-2.5 h-2.5 rounded-sm bg-white border-2 border-amber-500 shadow cursor-ew-resize z-30"
+                                  title="Drag to adjust this logo's width"
+                                />
+                                {/* Bottom handle: individual logo height */}
+                                <div
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    pushHistory();
+                                    setInteraction({
+                                      mode: 'logo-item-height',
+                                      elementId: el.id,
+                                      startClientX: e.clientX,
+                                      startClientY: e.clientY,
+                                      initialEl: JSON.parse(JSON.stringify(el)),
+                                      initialPan: { ...pan },
+                                      logoItemId: pl.id,
+                                      initialLogoHScale: rawItem?.height_scale ?? 1,
+                                      baseLogoPxW: pl.width,
+                                      baseLogoPxH: pl.height,
+                                    });
+                                  }}
+                                  className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-sm bg-white border-2 border-amber-500 shadow cursor-ns-resize z-30"
+                                  title="Drag to adjust this logo's height"
+                                />
+                              </>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 );

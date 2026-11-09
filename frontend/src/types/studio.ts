@@ -22,6 +22,9 @@ export interface LogoGroupItem {
   aspect_ratio: number;
   visible: boolean;
   scale_override?: number | null;
+  width_scale?: number | null;
+  height_scale?: number | null;
+  crop_transparent?: boolean;
 }
 
 export interface TextStyle {
@@ -76,6 +79,7 @@ export interface LogoGroupProps {
   vertical_alignment: 'top' | 'middle' | 'bottom';
   opacity: number;
   margin: number;
+  crop_transparent?: boolean;
 }
 
 export interface CanvasElement {

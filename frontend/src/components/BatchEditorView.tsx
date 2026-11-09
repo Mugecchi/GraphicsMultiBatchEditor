@@ -43,6 +43,13 @@ export const BatchEditorView: React.FC = () => {
     removeDynamicField,
     keepDynamicFieldOnlyOnEvent,
     clearStandardFieldOnOtherEvents,
+    addLogoGroupElement,
+    addAssetsToLogoGroup,
+    removeLogoFromGroup,
+    reorderLogoInGroup,
+    updateLogoInGroup,
+    updateEventLogo,
+    updateElementNested,
   } = useStudioStore();
 
   const [bulkTitlesText, setBulkTitlesText] = useState('');
@@ -102,6 +109,33 @@ export const BatchEditorView: React.FC = () => {
   // Find shared Logo Group element so users can see/copy shared logos if desired
   const sharedLogoGroup = project.elements.find((e) => e.type === 'logo_group');
   const sharedGroupLogos = sharedLogoGroup?.logo_group_props?.logos || [];
+
+  const toggleAssetInSharedGroup = (asset: LogoAsset) => {
+    if (!sharedLogoGroup) {
+      addLogoGroupElement([asset]);
+      return;
+    }
+    const existingItem = sharedGroupLogos.find((l) => l.asset_id === asset.id);
+    if (existingItem) {
+      removeLogoFromGroup(sharedLogoGroup.id, existingItem.id);
+    } else {
+      addAssetsToLogoGroup(sharedLogoGroup.id, [asset]);
+    }
+  };
+
+  const clearAllSharedGroupLogos = () => {
+    if (!sharedLogoGroup) return;
+    updateElementNested(
+      sharedLogoGroup.id,
+      (el) => {
+        if (el.logo_group_props) {
+          el.logo_group_props.logos = [];
+        }
+        return el;
+      },
+      true
+    );
+  };
 
   const assetToGroupItem = (asset: LogoAsset): LogoGroupItem => ({
     id: `evlg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
@@ -490,17 +524,17 @@ export const BatchEditorView: React.FC = () => {
             </div>
           </div>
 
-          {/* Card 2: Project Logo Pool (Upload once or per-row) */}
+          {/* Card 2: Project Logo Pool & Shared Default Logos */}
           <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between space-y-3">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold flex items-center gap-1.5">
                   <ImageIcon className="w-4 h-4 text-sky-400" />
-                  Logo Pool ({project.assets.length})
+                  Shared Logos & Project Pool ({project.assets.length})
                 </h3>
-                <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 text-xs font-semibold cursor-pointer transition">
+                <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold cursor-pointer transition">
                   <Upload className="w-3.5 h-3.5" />
-                  <span>{uploadingGlobalLibrary ? 'Uploading...' : 'Upload Logos'}</span>
+                  <span>{uploadingGlobalLibrary ? 'Uploading...' : '+ Upload Logos'}</span>
                   <input
                     type="file"
                     accept=".png,.jpg,.jpeg,.webp"
@@ -510,31 +544,224 @@ export const BatchEditorView: React.FC = () => {
                   />
                 </label>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Upload all partner/sponsor logos here (or upload directly on any row below). Click
-                any logo pill inside a row to toggle which logos appear on that specific tarpaulin.
-              </p>
 
-              {project.assets.length === 0 ? (
-                <div className="p-4 rounded-lg border border-dashed border-slate-300 dark:border-slate-800 text-center text-[11px] text-slate-400">
-                  No logos in pool yet. Click "Upload Logos" above.
+              {/* Shared Default Logos Editor (Applies to all rows using Shared) */}
+              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-sky-400">
+                    Active Shared Logos ({sharedGroupLogos.length}) — Default for All Rows
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {project.assets.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!sharedLogoGroup) {
+                            addLogoGroupElement(project.assets);
+                          } else {
+                            const existingAssetIds = new Set(
+                              sharedGroupLogos.map((l) => l.asset_id)
+                            );
+                            const missing = project.assets.filter(
+                              (a) => !existingAssetIds.has(a.id)
+                            );
+                            if (missing.length > 0) {
+                              addAssetsToLogoGroup(sharedLogoGroup.id, missing);
+                            }
+                          }
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 font-semibold"
+                        title="Add all uploaded pool logos to the Shared Logo Group"
+                      >
+                        + Add All Pool
+                      </button>
+                    )}
+                    {sharedGroupLogos.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearAllSharedGroupLogos}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 font-semibold"
+                        title="Remove all default shared logos"
+                      >
+                        Clear Shared
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <div className="grid grid-cols-4 gap-2 max-h-28 overflow-y-auto p-1">
-                  {project.assets.map((asset) => (
-                    <div
-                      key={asset.id}
-                      className="p-1.5 rounded bg-checkerboard border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center"
-                      title={`${asset.name} (${asset.natural_width}×${asset.natural_height})`}
-                    >
-                      <img src={asset.url} alt={asset.name} className="h-8 object-contain" />
-                      <span className="text-[9px] truncate w-full text-center mt-0.5 text-slate-400">
-                        {asset.name}
-                      </span>
-                    </div>
-                  ))}
+
+                {sharedGroupLogos.length === 0 ? (
+                  <div className="text-[11px] text-slate-400 py-1.5">
+                    No shared default logos active. Click any logo in the pool below to add it to
+                    shared logos.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {sharedGroupLogos.map((lg, sIdx) => {
+                      const scalePct = Math.round((lg.scale_override ?? 1) * 100);
+                      const isSquareForced = Math.abs((lg.aspect_ratio || 1) - 1) < 0.01;
+                      return (
+                        <div
+                          key={lg.id}
+                          className="flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm"
+                        >
+                          <img
+                            src={lg.url}
+                            alt={lg.name}
+                            className="w-6 h-6 object-contain bg-checkerboard rounded p-0.5"
+                          />
+                          <span className="text-[10px] font-medium max-w-[75px] truncate">
+                            {lg.name}
+                          </span>
+                          {/* Quick Individual Size & 1:1 Round controls in Shared Logos */}
+                          <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                sharedLogoGroup &&
+                                updateLogoInGroup(
+                                  sharedLogoGroup.id,
+                                  lg.id,
+                                  {
+                                    scale_override: Math.max(0.3, Number(((lg.scale_override ?? 1) - 0.1).toFixed(2))),
+                                  },
+                                  true
+                                )
+                              }
+                              className="px-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-[10px] font-bold text-slate-400"
+                              title="Shrink this logo by 10%"
+                            >
+                              −
+                            </button>
+                            <span
+                              className="text-[9px] font-mono text-sky-400 min-w-[28px] text-center"
+                              title="Individual logo size scale"
+                            >
+                              {scalePct}%
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                sharedLogoGroup &&
+                                updateLogoInGroup(
+                                  sharedLogoGroup.id,
+                                  lg.id,
+                                  {
+                                    scale_override: Math.min(2.2, Number(((lg.scale_override ?? 1) + 0.1).toFixed(2))),
+                                  },
+                                  true
+                                )
+                              }
+                              className="px-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-[10px] font-bold text-slate-400"
+                              title="Enlarge this logo by 10%"
+                            >
+                              +
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                sharedLogoGroup &&
+                                updateLogoInGroup(
+                                  sharedLogoGroup.id,
+                                  lg.id,
+                                  {
+                                    aspect_ratio: isSquareForced
+                                      ? lg.natural_width / Math.max(1, lg.natural_height)
+                                      : 1.0,
+                                  },
+                                  true
+                                )
+                              }
+                              className={`px-1 py-0.5 rounded text-[8px] font-semibold ${
+                                isSquareForced
+                                  ? 'bg-sky-500/20 text-sky-300'
+                                  : 'text-slate-400 hover:bg-slate-800'
+                              }`}
+                              title="Force 1:1 equal height and width for round logos"
+                            >
+                              1:1
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                sharedLogoGroup &&
+                                reorderLogoInGroup(sharedLogoGroup.id, lg.id, 'left')
+                              }
+                              disabled={sIdx === 0}
+                              className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-25"
+                              title="Move Left in Shared Logos"
+                            >
+                              <ArrowLeft className="w-2.5 h-2.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                sharedLogoGroup &&
+                                reorderLogoInGroup(sharedLogoGroup.id, lg.id, 'right')
+                              }
+                              disabled={sIdx === sharedGroupLogos.length - 1}
+                              className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-25"
+                              title="Move Right in Shared Logos"
+                            >
+                              <ArrowRight className="w-2.5 h-2.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                sharedLogoGroup && removeLogoFromGroup(sharedLogoGroup.id, lg.id)
+                              }
+                              className="p-0.5 rounded hover:bg-rose-500/20 text-rose-400 text-[10px]"
+                              title="Remove from Shared Logos"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Project Logo Pool — click to toggle in/out of Shared Logos */}
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400">
+                  Uploaded Logo Pool (Click any logo to toggle it in Shared Logos):
                 </div>
-              )}
+                {project.assets.length === 0 ? (
+                  <div className="p-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-800 text-center text-[11px] text-slate-400">
+                    No logos in pool yet. Click "+ Upload Logos" above.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2 max-h-28 overflow-y-auto p-1">
+                    {project.assets.map((asset) => {
+                      const inShared = sharedGroupLogos.some((l) => l.asset_id === asset.id);
+                      return (
+                        <button
+                          type="button"
+                          key={asset.id}
+                          onClick={() => toggleAssetInSharedGroup(asset)}
+                          className={`p-1.5 rounded bg-checkerboard border flex flex-col items-center justify-center transition ${
+                            inShared
+                              ? 'border-sky-500 ring-1 ring-sky-500/40'
+                              : 'border-slate-200 dark:border-slate-800 opacity-75 hover:opacity-100'
+                          }`}
+                          title={`${asset.name} (${asset.natural_width}×${asset.natural_height}) — Click to ${
+                            inShared ? 'remove from' : 'add to'
+                          } Shared Logos`}
+                        >
+                          <img src={asset.url} alt={asset.name} className="h-7 object-contain" />
+                          <span className="text-[9px] truncate w-full text-center mt-0.5 text-slate-300 font-medium">
+                            {inShared ? '✓ ' : '+ '}
+                            {asset.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2 text-[11px]">
@@ -992,49 +1219,141 @@ export const BatchEditorView: React.FC = () => {
                             bar below.
                           </span>
                         ) : (
-                          effectiveLogos.map((lg, lgIdx) => (
-                            <div
-                              key={lg.id}
-                              className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm"
-                            >
-                              <img
-                                src={lg.url}
-                                alt={lg.name}
-                                className="w-7 h-7 object-contain bg-checkerboard rounded p-0.5"
-                              />
-                              <span className="text-[11px] font-medium max-w-[90px] truncate">
-                                {lg.name}
-                              </span>
+                          effectiveLogos.map((lg, lgIdx) => {
+                            const scalePct = Math.round((lg.scale_override ?? 1) * 100);
+                            const isSquareForced = Math.abs((lg.aspect_ratio || 1) - 1) < 0.01;
+                            const patchRowOrSharedLogo = (patch: Partial<LogoGroupItem>) => {
+                              if (hasCustomLogos) {
+                                updateEventLogo(ev.id, lg.id, patch, true);
+                              } else if (sharedLogoGroup) {
+                                updateLogoInGroup(sharedLogoGroup.id, lg.id, patch, true);
+                              }
+                            };
+                            return (
+                              <div
+                                key={lg.id}
+                                className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm"
+                              >
+                                <img
+                                  src={lg.url}
+                                  alt={lg.name}
+                                  className="w-7 h-7 object-contain bg-checkerboard rounded p-0.5"
+                                />
+                                <span className="text-[11px] font-medium max-w-[80px] truncate">
+                                  {lg.name}
+                                </span>
 
-                              {hasCustomLogos && (
-                                <div className="flex items-center gap-0.5 ml-1">
+                                <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
                                   <button
-                                    onClick={() => moveEventLogo(ev, lg.id, 'left')}
+                                    type="button"
+                                    onClick={() =>
+                                      patchRowOrSharedLogo({
+                                        scale_override: Math.max(
+                                          0.3,
+                                          Number(((lg.scale_override ?? 1) - 0.1).toFixed(2))
+                                        ),
+                                      })
+                                    }
+                                    className="px-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-[10px] font-bold text-slate-400"
+                                    title="Shrink this logo by 10%"
+                                  >
+                                    −
+                                  </button>
+                                  <span
+                                    className="text-[9px] font-mono text-sky-400 min-w-[28px] text-center"
+                                    title="Individual logo size scale"
+                                  >
+                                    {scalePct}%
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      patchRowOrSharedLogo({
+                                        scale_override: Math.min(
+                                          2.2,
+                                          Number(((lg.scale_override ?? 1) + 0.1).toFixed(2))
+                                        ),
+                                      })
+                                    }
+                                    className="px-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-[10px] font-bold text-slate-400"
+                                    title="Enlarge this logo by 10%"
+                                  >
+                                    +
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      patchRowOrSharedLogo({
+                                        aspect_ratio: isSquareForced
+                                          ? lg.natural_width / Math.max(1, lg.natural_height)
+                                          : 1.0,
+                                      })
+                                    }
+                                    className={`px-1 py-0.5 rounded text-[8px] font-semibold ${
+                                      isSquareForced
+                                        ? 'bg-sky-500/20 text-sky-300'
+                                        : 'text-slate-400 hover:bg-slate-800'
+                                    }`}
+                                    title="Force 1:1 equal height and width for round logos"
+                                  >
+                                    1:1
+                                  </button>
+                                </div>
+
+                                <div className="flex items-center gap-0.5 ml-0.5">
+                                  <button
+                                    onClick={() => {
+                                      if (hasCustomLogos) {
+                                        moveEventLogo(ev, lg.id, 'left');
+                                      } else if (sharedLogoGroup) {
+                                        reorderLogoInGroup(sharedLogoGroup.id, lg.id, 'left');
+                                      }
+                                    }}
                                     disabled={lgIdx === 0}
                                     className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-25"
-                                    title="Move Left"
+                                    title={hasCustomLogos ? 'Move Left in Row' : 'Move Left in Shared Logos'}
                                   >
                                     <ArrowLeft className="w-3 h-3" />
                                   </button>
                                   <button
-                                    onClick={() => moveEventLogo(ev, lg.id, 'right')}
-                                    disabled={lgIdx === rowLogos.length - 1}
+                                    onClick={() => {
+                                      if (hasCustomLogos) {
+                                        moveEventLogo(ev, lg.id, 'right');
+                                      } else if (sharedLogoGroup) {
+                                        reorderLogoInGroup(sharedLogoGroup.id, lg.id, 'right');
+                                      }
+                                    }}
+                                    disabled={lgIdx === effectiveLogos.length - 1}
                                     className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-25"
-                                    title="Move Right"
+                                    title={hasCustomLogos ? 'Move Right in Row' : 'Move Right in Shared Logos'}
                                   >
                                     <ArrowRight className="w-3 h-3" />
                                   </button>
                                   <button
-                                    onClick={() => removeEventLogo(ev, lg.id)}
+                                    onClick={() => {
+                                      if (hasCustomLogos) {
+                                        removeEventLogo(ev, lg.id);
+                                      } else {
+                                        // Fork shared logos into this row without this logo so only this row is affected
+                                        const forked = sharedGroupLogos.filter((item) => item.id !== lg.id);
+                                        updateEvent(ev.id, {
+                                          logos: JSON.parse(JSON.stringify(forked)),
+                                        });
+                                      }
+                                    }}
                                     className="p-0.5 rounded hover:bg-rose-500/20 text-rose-400"
-                                    title="Remove Logo from this Row"
+                                    title={
+                                      hasCustomLogos
+                                        ? 'Remove Logo from this Row'
+                                        : 'Remove Logo from this Row (switches row to Custom Logos)'
+                                    }
                                   >
                                     ✕
                                   </button>
                                 </div>
-                              )}
-                            </div>
-                          ))
+                              </div>
+                            );
+                          })
                         )}
                       </div>
 

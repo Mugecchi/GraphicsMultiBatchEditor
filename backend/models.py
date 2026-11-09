@@ -25,6 +25,9 @@ class LogoGroupItem(BaseModel):
     aspect_ratio: float
     visible: bool = True
     scale_override: Optional[float] = None
+    width_scale: Optional[float] = None
+    height_scale: Optional[float] = None
+    crop_transparent: bool = True
 
 
 class TextStyle(BaseModel):
@@ -79,6 +82,7 @@ class LogoGroupProps(BaseModel):
     vertical_alignment: Literal["top", "middle", "bottom"] = "middle"
     opacity: float = 1.0
     margin: float = 1.0  # inner padding percentage
+    crop_transparent: bool = True  # auto-trim transparent borders so logos match visual height/width
 
 
 class CanvasElement(BaseModel):
