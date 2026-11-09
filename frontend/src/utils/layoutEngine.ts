@@ -46,13 +46,32 @@ export function resolveTextBinding(
     }
   }
 
-  return text.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (match, key) => {
+  const hasAnyToken = /\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}/.test(text);
+  let anyTokenResolvedNonEmpty = false;
+
+  const resolved = text.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, key) => {
     const trimmed = String(key).trim();
     if (trimmed in replacements) {
-      return replacements[trimmed];
+      const val = replacements[trimmed];
+      if (val && val.trim().length > 0) {
+        anyTokenResolvedNonEmpty = true;
+      }
+      return val;
     }
-    return match;
+    // If a custom/unique field does not exist on this specific event row, resolve to empty string
+    if (trimmed.startsWith('event.custom.') || trimmed.startsWith('event.')) {
+      return '';
+    }
+    return '';
   });
+
+  // If the text box had a dynamic {{...}} token (like "Special Event: {{event.custom.special_badge}}")
+  // and the token resolved to empty on this row, hide the entire line/prefix so nothing dangling prints!
+  if (hasAnyToken && !anyTokenResolvedNonEmpty) {
+    return '';
+  }
+
+  return resolved;
 }
 
 /**

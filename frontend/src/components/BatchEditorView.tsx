@@ -51,12 +51,51 @@ export const BatchEditorView: React.FC = () => {
   const [expandedSecondaryFields, setExpandedSecondaryFields] = useState(true);
   const [newDynamicColName, setNewDynamicColName] = useState('');
   const [pasteMode, setPasteMode] = useState<'schedule' | 'titles'>('schedule');
+  const [addingUniqueFieldForRow, setAddingUniqueFieldForRow] = useState<string | null>(null);
+  const [uniqueFieldKeyInput, setUniqueFieldKeyInput] = useState('');
+  const [uniqueFieldValInput, setUniqueFieldValInput] = useState('');
 
   if (!project) return null;
 
   const allCustomFieldKeys = Array.from(
     new Set(project.events.flatMap((ev) => Object.keys(ev.custom_fields || {})))
   );
+
+  // Separate global fields (present on most rows) vs unique fields
+  const addUniqueFieldToRow = (ev: EventRecord, rawKey: string, val: string) => {
+    const cleanKey = rawKey
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (!cleanKey) return;
+
+    // 1. Add the field ONLY to this specific event row
+    updateEvent(ev.id, {
+      custom_fields: {
+        ...(ev.custom_fields || {}),
+        [cleanKey]: val,
+      },
+    });
+
+    // 2. Ensure a corresponding text box bound to {{event.custom.<cleanKey>}} exists on the canvas
+    const st = useStudioStore.getState();
+    const token = `{{event.custom.${cleanKey}}}`;
+    const existsOnCanvas = st.project?.elements.some(
+      (el) =>
+        el.type === 'text' &&
+        (el.text_props?.binding === token || el.text_props?.content?.includes(token))
+    );
+    if (!existsOnCanvas) {
+      st.addTextElement('custom', cleanKey, `Unique: ${cleanKey}`);
+    }
+  };
+
+  const removeFieldFromSingleRow = (ev: EventRecord, keyToRemove: string) => {
+    const nextCustom = { ...(ev.custom_fields || {}) };
+    delete nextCustom[keyToRemove];
+    updateEvent(ev.id, { custom_fields: nextCustom });
+  };
 
   // Find shared Logo Group element so users can see/copy shared logos if desired
   const sharedLogoGroup = project.elements.find((e) => e.type === 'logo_group');
@@ -693,43 +732,120 @@ export const BatchEditorView: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Custom Dynamic Fields inputs for this row */}
-                      {allCustomFieldKeys.length > 0 && (
-                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
-                          {allCustomFieldKeys.map((k) => (
-                            <div key={k}>
-                              <div className="flex items-center justify-between">
-                                <label className="block text-[10px] font-mono text-sky-400">
-                                  {`{{event.custom.${k}}}`}
-                                </label>
-                                {idx === 0 && (
-                                  <button
-                                    onClick={() => removeDynamicField(k)}
-                                    className="text-[9px] text-slate-400 hover:text-rose-400"
-                                    title={`Delete dynamic field "${k}" from all rows`}
-                                  >
-                                    ✕
-                                  </button>
-                                )}
-                              </div>
+                      {/* Custom & Unique Dynamic Fields for this specific row */}
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Dynamic & Unique Fields for Row #{idx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddingUniqueFieldForRow(
+                                addingUniqueFieldForRow === ev.id ? null : ev.id
+                              );
+                              setUniqueFieldKeyInput('');
+                              setUniqueFieldValInput('');
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 text-[10px] font-semibold transition"
+                            title="Add a unique field that only applies to this tarpaulin row (automatically hidden on other rows where it is empty)"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add Unique Field to Row #{idx + 1}
+                          </button>
+                        </div>
+
+                        {addingUniqueFieldForRow === ev.id && (
+                          <div className="p-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 space-y-2">
+                            <div className="text-[10px] text-indigo-300 font-medium">
+                              Create a unique field for <strong>Row #{idx + 1}</strong> (e.g.,{' '}
+                              <code>special_badge</code>, <code>guest_speaker</code>,{' '}
+                              <code>award_note</code>). It also adds a bound text box on the canvas
+                              that stays blank on rows that don't have it.
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               <input
                                 type="text"
-                                value={ev.custom_fields?.[k] ?? ''}
-                                onChange={(e) =>
-                                  updateEvent(ev.id, {
-                                    custom_fields: {
-                                      ...(ev.custom_fields || {}),
-                                      [k]: e.target.value,
-                                    },
-                                  })
-                                }
-                                placeholder={`Enter ${k} for tarp #${idx + 1}...`}
-                                className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                                placeholder="Field key (e.g. special_badge)"
+                                value={uniqueFieldKeyInput}
+                                onChange={(e) => setUniqueFieldKeyInput(e.target.value)}
+                                className="w-40 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-indigo-500/40 text-xs outline-none"
                               />
+                              <input
+                                type="text"
+                                placeholder="Value for this tarpaulin..."
+                                value={uniqueFieldValInput}
+                                onChange={(e) => setUniqueFieldValInput(e.target.value)}
+                                className="flex-1 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-indigo-500/40 text-xs outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!uniqueFieldKeyInput.trim()) return;
+                                  addUniqueFieldToRow(ev, uniqueFieldKeyInput, uniqueFieldValInput);
+                                  setAddingUniqueFieldForRow(null);
+                                  setUniqueFieldKeyInput('');
+                                  setUniqueFieldValInput('');
+                                }}
+                                className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shrink-0"
+                              >
+                                Add
+                              </button>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                          </div>
+                        )}
+
+                        {Object.keys(ev.custom_fields || {}).length > 0 && (
+                          <div className="grid grid-cols-2 gap-2">
+                            {Object.entries(ev.custom_fields || {}).map(([k, val]) => (
+                              <div key={k}>
+                                <div className="flex items-center justify-between">
+                                  <label
+                                    className="block text-[10px] font-mono text-sky-400 truncate"
+                                    title={`Bound to {{event.custom.${k}}}`}
+                                  >
+                                    {k}
+                                  </label>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFieldFromSingleRow(ev, k)}
+                                      className="text-[9px] text-slate-400 hover:text-amber-400"
+                                      title={`Remove "${k}" from Row #${idx + 1} only`}
+                                    >
+                                      clear row
+                                    </button>
+                                    {idx === 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeDynamicField(k)}
+                                        className="text-[9px] text-slate-400 hover:text-rose-400"
+                                        title={`Delete "${k}" from ALL rows`}
+                                      >
+                                        ✕ all
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <input
+                                  type="text"
+                                  value={val ?? ''}
+                                  onChange={(e) =>
+                                    updateEvent(ev.id, {
+                                      custom_fields: {
+                                        ...(ev.custom_fields || {}),
+                                        [k]: e.target.value,
+                                      },
+                                    })
+                                  }
+                                  placeholder={`Empty (hidden on tarp #${idx + 1})`}
+                                  className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Column 3: Per-Tarpaulin Logos Assignment & Ordering (6 cols) */}

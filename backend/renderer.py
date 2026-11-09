@@ -54,15 +54,24 @@ def resolve_text_binding(
         replacements[f"event.custom.{k}"] = str(v or "")
         replacements[f"event.{k}"] = str(v or "")
 
+    has_any_token = bool(re.search(r"\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}", text))
+    any_token_non_empty = False
+
     def repl(match: re.Match) -> str:
+        nonlocal any_token_non_empty
         key = match.group(1).strip()
-        if key in replacements and replacements[key] != "":
-            return replacements[key]
         if key in replacements:
-            return replacements[key]
-        return match.group(0)
+            val = replacements[key]
+            if val and val.strip():
+                any_token_non_empty = True
+            return val
+        if key.startswith("event.custom.") or key.startswith("event."):
+            return ""
+        return ""
 
     resolved = re.sub(r"\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}", repl, text)
+    if has_any_token and not any_token_non_empty:
+        return ""
     return resolved
 
 
