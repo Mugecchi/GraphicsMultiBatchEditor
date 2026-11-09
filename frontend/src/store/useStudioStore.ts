@@ -62,6 +62,11 @@ interface StudioState {
   addTextElement: (presetRole?: string, customFieldKey?: string, customFieldLabel?: string) => void;
   addDynamicFieldAndElement: (fieldKey: string, defaultLabel?: string) => void;
   removeDynamicField: (fieldKey: string) => void;
+  keepDynamicFieldOnlyOnEvent: (eventId: string, fieldKey: string) => void;
+  clearStandardFieldOnOtherEvents: (
+    eventId: string,
+    fieldKey: 'subtitle' | 'venue' | 'address' | 'date'
+  ) => void;
   addLogoElement: (asset: LogoAsset) => void;
   addLogoGroupElement: (initialLogos?: LogoAsset[]) => void;
   updateElement: (id: string, patch: Partial<CanvasElement>, recordHistory?: boolean) => void;
@@ -538,7 +543,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   },
 
   removeDynamicField: (fieldKey) => {
-    const { project, pushHistory } = get();
+    const { project, pushHistory, selectedElementIds } = get();
     if (!project) return;
     pushHistory();
     const updatedEvents = project.events.map((ev) => {
@@ -546,10 +551,64 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       delete nextCustom[fieldKey];
       return { ...ev, custom_fields: nextCustom };
     });
+    const token = `{{event.custom.${fieldKey}}}`;
+    const updatedElements = project.elements.filter(
+      (el) =>
+        !(
+          el.type === 'text' &&
+          (el.text_props?.binding === token || el.text_props?.content?.trim() === token)
+        )
+    );
+    const remainingIds = new Set(updatedElements.map((e) => e.id));
+    set({
+      project: { ...project, events: updatedEvents, elements: updatedElements },
+      selectedElementIds: selectedElementIds.filter((id) => remainingIds.has(id)),
+      saveStatus: 'unsaved',
+      statusMessage: `Removed field "${fieldKey}" from all rows`,
+    });
+    scheduleAutoSave(get);
+  },
+
+  keepDynamicFieldOnlyOnEvent: (eventId, fieldKey) => {
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+    let removedCount = 0;
+    const updatedEvents = project.events.map((ev) => {
+      if (ev.id === eventId) return ev;
+      if (ev.custom_fields && fieldKey in ev.custom_fields) {
+        removedCount += 1;
+        const nextCustom = { ...ev.custom_fields };
+        delete nextCustom[fieldKey];
+        return { ...ev, custom_fields: nextCustom };
+      }
+      return ev;
+    });
     set({
       project: { ...project, events: updatedEvents },
       saveStatus: 'unsaved',
-      statusMessage: `Removed dynamic field "${fieldKey}"`,
+      statusMessage: `Removed "${fieldKey}" from ${removedCount} other tarpaulin(s) — kept only on selected row`,
+    });
+    scheduleAutoSave(get);
+  },
+
+  clearStandardFieldOnOtherEvents: (eventId, fieldKey) => {
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+    let clearedCount = 0;
+    const updatedEvents = project.events.map((ev) => {
+      if (ev.id === eventId) return ev;
+      if (ev[fieldKey]) {
+        clearedCount += 1;
+        return { ...ev, [fieldKey]: '' };
+      }
+      return ev;
+    });
+    set({
+      project: { ...project, events: updatedEvents },
+      saveStatus: 'unsaved',
+      statusMessage: `Cleared "${fieldKey}" from ${clearedCount} other tarpaulin(s)`,
     });
     scheduleAutoSave(get);
   },

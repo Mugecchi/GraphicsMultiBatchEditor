@@ -463,6 +463,17 @@ export function parseStructuredScheduleText(rawText: string): ParsedActivityDraf
         const actDate = act.dateOverride || sectionDate;
         const leadOrTrack = act.leadOffice || act.advocacyTrack || directLeadOffice;
 
+        const badgeVal = act.specialBadge || directSpecialBadge;
+        const customFields: Record<string, string> = {
+          day_header: header,
+          activity_no: act.label,
+          lead_office: leadOrTrack,
+          partners: actPartners,
+        };
+        if (badgeVal) {
+          customFields.special_badge = badgeVal;
+        }
+
         results.push({
           name: `${shortDay} - ${act.label}`,
           title: act.description || `${header} - ${act.label}`,
@@ -472,18 +483,22 @@ export function parseStructuredScheduleText(rawText: string): ParsedActivityDraf
           venue: actVenue,
           address: '',
           date: actDate,
-          custom_fields: {
-            day_header: header,
-            activity_no: act.label,
-            lead_office: leadOrTrack,
-            partners: actPartners,
-            special_badge: act.specialBadge || directSpecialBadge,
-          },
+          custom_fields: customFields,
         });
       }
     } else if (directTitle || header) {
       const leadOrTrack = directLeadOffice || directAdvocacyTrack;
       const isOnline = directAdvocacyTrack.toLowerCase().includes('online');
+      const customFields: Record<string, string> = {
+        day_header: header,
+        activity_no: 'Main Activity',
+        lead_office: leadOrTrack,
+        partners: sharedPartners,
+      };
+      if (directSpecialBadge) {
+        customFields.special_badge = directSpecialBadge;
+      }
+
       results.push({
         name: shortDay,
         title: directTitle || header,
@@ -495,13 +510,7 @@ export function parseStructuredScheduleText(rawText: string): ParsedActivityDraf
         venue: sharedVenue || (isOnline ? 'Online / Social Media Platforms' : ''),
         address: '',
         date: sectionDate,
-        custom_fields: {
-          day_header: header,
-          activity_no: 'Main Activity',
-          lead_office: leadOrTrack,
-          partners: sharedPartners,
-          special_badge: directSpecialBadge,
-        },
+        custom_fields: customFields,
       });
     }
   }

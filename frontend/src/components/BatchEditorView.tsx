@@ -41,6 +41,8 @@ export const BatchEditorView: React.FC = () => {
     saveProjectNow,
     addDynamicFieldAndElement,
     removeDynamicField,
+    keepDynamicFieldOnlyOnEvent,
+    clearStandardFieldOnOtherEvents,
   } = useStudioStore();
 
   const [bulkTitlesText, setBulkTitlesText] = useState('');
@@ -694,7 +696,19 @@ export const BatchEditorView: React.FC = () => {
                       {expandedSecondaryFields && (
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           <div>
-                            <label className="block text-[10px] text-slate-400">Subtitle</label>
+                            <div className="flex items-center justify-between">
+                              <label className="block text-[10px] text-slate-400">Subtitle</label>
+                              {project.events.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => clearStandardFieldOnOtherEvents(ev.id, 'subtitle')}
+                                  className="text-[9px] text-indigo-400 hover:text-indigo-300"
+                                  title="Clear Subtitle from all other tarpaulin rows (keep only on this row)"
+                                >
+                                  only here
+                                </button>
+                              )}
+                            </div>
                             <input
                               type="text"
                               value={ev.subtitle}
@@ -703,7 +717,19 @@ export const BatchEditorView: React.FC = () => {
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] text-slate-400">Venue</label>
+                            <div className="flex items-center justify-between">
+                              <label className="block text-[10px] text-slate-400">Venue</label>
+                              {project.events.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => clearStandardFieldOnOtherEvents(ev.id, 'venue')}
+                                  className="text-[9px] text-indigo-400 hover:text-indigo-300"
+                                  title="Clear Venue from all other tarpaulin rows (keep only on this row)"
+                                >
+                                  only here
+                                </button>
+                              )}
+                            </div>
                             <input
                               type="text"
                               value={ev.venue}
@@ -712,7 +738,19 @@ export const BatchEditorView: React.FC = () => {
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] text-slate-400">Address</label>
+                            <div className="flex items-center justify-between">
+                              <label className="block text-[10px] text-slate-400">Address</label>
+                              {project.events.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => clearStandardFieldOnOtherEvents(ev.id, 'address')}
+                                  className="text-[9px] text-indigo-400 hover:text-indigo-300"
+                                  title="Clear Address from all other tarpaulin rows (keep only on this row)"
+                                >
+                                  only here
+                                </button>
+                              )}
+                            </div>
                             <input
                               type="text"
                               value={ev.address}
@@ -721,7 +759,19 @@ export const BatchEditorView: React.FC = () => {
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] text-slate-400">Date</label>
+                            <div className="flex items-center justify-between">
+                              <label className="block text-[10px] text-slate-400">Date</label>
+                              {project.events.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => clearStandardFieldOnOtherEvents(ev.id, 'date')}
+                                  className="text-[9px] text-indigo-400 hover:text-indigo-300"
+                                  title="Clear Date from all other tarpaulin rows (keep only on this row)"
+                                >
+                                  only here
+                                </button>
+                              )}
+                            </div>
                             <input
                               type="text"
                               value={ev.date}
@@ -797,52 +847,75 @@ export const BatchEditorView: React.FC = () => {
 
                         {Object.keys(ev.custom_fields || {}).length > 0 && (
                           <div className="grid grid-cols-2 gap-2">
-                            {Object.entries(ev.custom_fields || {}).map(([k, val]) => (
-                              <div key={k}>
-                                <div className="flex items-center justify-between">
-                                  <label
-                                    className="block text-[10px] font-mono text-sky-400 truncate"
-                                    title={`Bound to {{event.custom.${k}}}`}
-                                  >
-                                    {k}
-                                  </label>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => removeFieldFromSingleRow(ev, k)}
-                                      className="text-[9px] text-slate-400 hover:text-amber-400"
-                                      title={`Remove "${k}" from Row #${idx + 1} only`}
+                            {Object.entries(ev.custom_fields || {}).map(([k, val]) => {
+                              const existsOnOtherRows = project.events.some(
+                                (other) =>
+                                  other.id !== ev.id &&
+                                  other.custom_fields &&
+                                  k in other.custom_fields
+                              );
+                              return (
+                                <div key={k}>
+                                  <div className="flex items-center justify-between gap-1 mb-0.5">
+                                    <label
+                                      className="block text-[10px] font-mono text-sky-400 truncate"
+                                      title={`Bound to {{event.custom.${k}}}`}
                                     >
-                                      clear row
-                                    </button>
-                                    {idx === 0 && (
+                                      {k}
+                                    </label>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {existsOnOtherRows ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => keepDynamicFieldOnlyOnEvent(ev.id, k)}
+                                          className="px-1.5 py-0.5 rounded bg-indigo-500/15 hover:bg-indigo-500/30 text-[9px] font-semibold text-indigo-300 transition"
+                                          title={`Remove "${k}" from the rest of the tarpaulins and keep it ONLY on Row #${idx + 1}`}
+                                        >
+                                          only this row
+                                        </button>
+                                      ) : (
+                                        <span
+                                          className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-[9px] font-semibold text-emerald-400"
+                                          title={`"${k}" only exists on Row #${idx + 1}`}
+                                        >
+                                          unique here
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => removeFieldFromSingleRow(ev, k)}
+                                        className="px-1 py-0.5 rounded hover:bg-amber-500/15 text-[9px] text-slate-400 hover:text-amber-300 transition"
+                                        title={`Remove "${k}" from Row #${idx + 1} only`}
+                                      >
+                                        remove here
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => removeDynamicField(k)}
-                                        className="text-[9px] text-slate-400 hover:text-rose-400"
-                                        title={`Delete "${k}" from ALL rows`}
+                                        className="px-1 py-0.5 rounded hover:bg-rose-500/15 text-[9px] text-slate-400 hover:text-rose-400 transition"
+                                        title={`Delete "${k}" from ALL rows and remove its canvas layer`}
                                       >
                                         ✕ all
                                       </button>
-                                    )}
+                                    </div>
                                   </div>
+                                  <input
+                                    type="text"
+                                    value={val ?? ''}
+                                    onChange={(e) =>
+                                      updateEvent(ev.id, {
+                                        custom_fields: {
+                                          ...(ev.custom_fields || {}),
+                                          [k]: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    placeholder={`Empty (hidden on tarp #${idx + 1})`}
+                                    className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                                  />
                                 </div>
-                                <input
-                                  type="text"
-                                  value={val ?? ''}
-                                  onChange={(e) =>
-                                    updateEvent(ev.id, {
-                                      custom_fields: {
-                                        ...(ev.custom_fields || {}),
-                                        [k]: e.target.value,
-                                      },
-                                    })
-                                  }
-                                  placeholder={`Empty (hidden on tarp #${idx + 1})`}
-                                  className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
-                                />
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>

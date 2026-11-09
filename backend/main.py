@@ -1662,7 +1662,7 @@ def create_sample_demo_project() -> Dict[str, Any]:
                 "activity_no": act_no,
                 "lead_office": lead,
                 "partners": partners,
-                "special_badge": badge,
+                **({"special_badge": badge} if badge else {}),
             },
             order_index=idx,
         ).model_dump()
