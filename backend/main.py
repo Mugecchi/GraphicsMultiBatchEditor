@@ -52,8 +52,8 @@ ALLOWED_ORIGINS = [
     "http://localhost:5174",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
-    "http://127.0.0.1:8811",
-    "http://localhost:8811",
+    "http://127.0.0.1:8812",
+    "http://localhost:8812",
 ]
 extra_origins = os.environ.get("TARP_ALLOWED_ORIGINS", "")
 if extra_origins.strip():
@@ -1128,7 +1128,7 @@ if __name__ == "__main__":
     import uvicorn
 
     host = os.environ.get("TARP_HOST", "0.0.0.0")
-    port = int(os.environ.get("TARP_PORT", "8811"))
+    port = int(os.environ.get("TARP_PORT", "8812"))
     is_prod = os.environ.get("TARP_ENV", "").lower() == "production"
 
     uvicorn.run(

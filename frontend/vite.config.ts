@@ -9,11 +9,11 @@ export default defineConfig({
     allowedHosts: ['tarp.cyngfps.com', 'localhost', '127.0.0.1'],
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8811',
+        target: 'http://127.0.0.1:8812',
         changeOrigin: true,
       },
       '/storage': {
-        target: 'http://127.0.0.1:8811',
+        target: 'http://127.0.0.1:8812',
         changeOrigin: true,
       },
     },

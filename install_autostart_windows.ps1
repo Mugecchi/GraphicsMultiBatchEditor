@@ -1,12 +1,12 @@
 # Run this script in an Administrator PowerShell on your Windows Server to register
-# Tarpaulin Studio (port 8811) to auto-start on boot via Windows Task Scheduler.
+# Tarpaulin Studio (port 8812) to auto-start on boot via Windows Task Scheduler.
 
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $FrontendDir = Join-Path $ProjectRoot "frontend"
 $BackendDir  = Join-Path $ProjectRoot "backend"
-$TaskName    = "TarpaulinStudio_Port8811"
+$TaskName    = "TarpaulinStudio_Port8812"
 
 Write-Host "[1/3] Building production frontend bundle..." -ForegroundColor Cyan
 Push-Location $FrontendDir
@@ -23,7 +23,7 @@ $RunnerContent = @"
 cd /d "$BackendDir"
 set TARP_ENV=production
 set TARP_HOST=0.0.0.0
-set TARP_PORT=8811
+set TARP_PORT=8812
 set TARP_ALLOWED_ORIGINS=https://tarp.cyngfps.com,http://tarp.cyngfps.com
 "$PythonExe" main.py >> "$BackendDir\storage\server.log" 2>&1
 "@
@@ -39,5 +39,5 @@ Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Se
 Start-ScheduledTask -TaskName $TaskName
 
 Write-Host ""
-Write-Host "SUCCESS! Tarpaulin Studio is now running on port 8811 and will automatically start whenever the Windows Server reboots." -ForegroundColor Green
+Write-Host "SUCCESS! Tarpaulin Studio is now running on port 8812 and will automatically start whenever the Windows Server reboots." -ForegroundColor Green
 Write-Host "Logs: $BackendDir\storage\server.log"

@@ -14,10 +14,10 @@ if %ERRORLEVEL% neq 0 (
 )
 
 cd /d "%~dp0backend"
-echo [2/2] Starting Unified FastAPI Production Server on 0.0.0.0:8811...
+echo [2/2] Starting Unified FastAPI Production Server on 0.0.0.0:8812...
 set TARP_ENV=production
 set TARP_HOST=0.0.0.0
-set TARP_PORT=8811
+set TARP_PORT=8812
 set TARP_ALLOWED_ORIGINS=https://tarp.cyngfps.com,http://tarp.cyngfps.com
 
 python main.py
