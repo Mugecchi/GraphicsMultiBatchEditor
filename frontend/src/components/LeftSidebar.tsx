@@ -30,6 +30,8 @@ export const LeftSidebar: React.FC = () => {
     selectedElementIds,
     selectElement,
     addTextElement,
+    addDynamicFieldAndElement,
+    removeDynamicField,
     addLogoElement,
     addLogoGroupElement,
     addAssetsToLogoGroup,
@@ -51,8 +53,17 @@ export const LeftSidebar: React.FC = () => {
   const [eventSearch, setEventSearch] = useState('');
   const [newCustomKey, setNewCustomKey] = useState('');
   const [newCustomVal, setNewCustomVal] = useState('');
+  const [newDynamicFieldName, setNewDynamicFieldName] = useState('');
+  const [newDynamicFieldDefault, setNewDynamicFieldDefault] = useState('');
 
   if (!project) return null;
+
+  // Collect all custom dynamic field keys defined across events
+  const allCustomFieldKeys = Array.from(
+    new Set(
+      project.events.flatMap((ev) => Object.keys(ev.custom_fields || {}))
+    )
+  );
 
   // Sort layers top-to-bottom (highest z_index at top of list)
   const sortedElements = [...project.elements].sort((a, b) => b.z_index - a.z_index);
@@ -345,6 +356,81 @@ export const LeftSidebar: React.FC = () => {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* CREATE & ADD USER-DEFINED DYNAMIC FIELDS */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-sky-400">
+                Custom Dynamic Fields ({'{{event.custom.*}}'})
+              </h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Create any custom dynamic variable (e.g., Speaker, Host, Contact, Theme). It adds
+                an auto-fitting text box on the canvas and a column in the Batch Editor.
+              </p>
+
+              <div className="space-y-1.5 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                <input
+                  type="text"
+                  placeholder="Field name (e.g. speaker, host, batch_no)"
+                  value={newDynamicFieldName}
+                  onChange={(e) => setNewDynamicFieldName(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Default sample text (optional)"
+                  value={newDynamicFieldDefault}
+                  onChange={(e) => setNewDynamicFieldDefault(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                />
+                <button
+                  onClick={() => {
+                    if (!newDynamicFieldName.trim()) return;
+                    addDynamicFieldAndElement(
+                      newDynamicFieldName.trim(),
+                      newDynamicFieldDefault.trim()
+                    );
+                    setNewDynamicFieldName('');
+                    setNewDynamicFieldDefault('');
+                  }}
+                  className="w-full py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold flex items-center justify-center gap-1 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Create Dynamic Field & Add Text Box
+                </button>
+              </div>
+
+              {allCustomFieldKeys.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  <div className="text-[10px] font-semibold uppercase text-slate-400">
+                    Existing Dynamic Fields (Click + to add text box)
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allCustomFieldKeys.map((k) => (
+                      <div
+                        key={k}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px]"
+                      >
+                        <button
+                          onClick={() => addTextElement('custom', k, `Field: ${k}`)}
+                          className="font-mono text-sky-400 hover:underline flex items-center gap-1"
+                          title={`Add text box bound to {{event.custom.${k}}}`}
+                        >
+                          <Plus className="w-3 h-3" />
+                          {`{{event.custom.${k}}}`}
+                        </button>
+                        <button
+                          onClick={() => removeDynamicField(k)}
+                          className="text-slate-400 hover:text-rose-400 ml-1"
+                          title="Delete dynamic field"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="pt-2 border-t border-slate-200 dark:border-slate-800">

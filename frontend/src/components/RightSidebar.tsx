@@ -46,9 +46,14 @@ export const RightSidebar: React.FC = () => {
     clearElementOverride,
     detectLocalBrowserFonts,
     uploadCustomFont,
+    addDynamicFieldAndElement,
   } = useStudioStore();
 
   if (!project) return null;
+
+  const allCustomFieldKeys = Array.from(
+    new Set(project.events.flatMap((ev) => Object.keys(ev.custom_fields || {})))
+  );
 
   const selectedElements = project.elements.filter((e) => selectedElementIds.includes(e.id));
   const el = selectedElements.length === 1 ? selectedElements[0] : null;
@@ -303,9 +308,32 @@ export const RightSidebar: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-0.5">
-                    Dynamic Event Field Binding
-                  </label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-[11px] text-slate-400">
+                      Dynamic Event Field Binding
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const key = window.prompt(
+                          'Enter a new dynamic field name (e.g., speaker, host, sponsor_tier):'
+                        );
+                        if (!key || !key.trim()) return;
+                        const clean = key
+                          .trim()
+                          .toLowerCase()
+                          .replace(/[^a-z0-9_]+/g, '_')
+                          .replace(/^_+|_+$/g, '');
+                        if (!clean) return;
+                        addDynamicFieldAndElement(clean, '');
+                        const token = `{{event.custom.${clean}}}`;
+                        updateTextProp({ binding: token, content: token });
+                      }}
+                      className="text-[10px] text-sky-400 hover:underline font-semibold"
+                    >
+                      + New Dynamic Field
+                    </button>
+                  </div>
                   <select
                     value={tp.binding || ''}
                     onChange={(e) => {
@@ -318,12 +346,23 @@ export const RightSidebar: React.FC = () => {
                     className="w-full px-2 py-1.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
                   >
                     <option value="">None (Static / Custom Text)</option>
-                    <option value="{{event.title}}">Event Title ({'{{event.title}}'})</option>
-                    <option value="{{event.subtitle}}">Subtitle ({'{{event.subtitle}}'})</option>
-                    <option value="{{event.venue}}">Venue ({'{{event.venue}}'})</option>
-                    <option value="{{event.address}}">Address ({'{{event.address}}'})</option>
-                    <option value="{{event.date}}">Event Date ({'{{event.date}}'})</option>
-                    <option value="{{event.name}}">Event Record Name ({'{{event.name}}'})</option>
+                    <optgroup label="Standard Event Fields">
+                      <option value="{{event.title}}">Event Title ({'{{event.title}}'})</option>
+                      <option value="{{event.subtitle}}">Subtitle ({'{{event.subtitle}}'})</option>
+                      <option value="{{event.venue}}">Venue ({'{{event.venue}}'})</option>
+                      <option value="{{event.address}}">Address ({'{{event.address}}'})</option>
+                      <option value="{{event.date}}">Event Date ({'{{event.date}}'})</option>
+                      <option value="{{event.name}}">Event Record Name ({'{{event.name}}'})</option>
+                    </optgroup>
+                    {allCustomFieldKeys.length > 0 && (
+                      <optgroup label="Custom Dynamic Fields">
+                        {allCustomFieldKeys.map((k) => (
+                          <option key={k} value={`{{event.custom.${k}}}`}>
+                            {k} ({`{{event.custom.${k}}}`})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
 
@@ -518,23 +557,29 @@ export const RightSidebar: React.FC = () => {
                 </div>
 
                 {/* Wrapping & Auto-fit */}
-                <div className="flex items-center justify-between pt-1">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={tp.wrap}
-                      onChange={(e) => updateTextProp({ wrap: e.target.checked })}
-                    />
-                    <span>Word Wrap</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={tp.auto_fit}
-                      onChange={(e) => updateTextProp({ auto_fit: e.target.checked })}
-                    />
-                    <span>Auto-Fit Font to Box</span>
-                  </label>
+                <div className="p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-sky-400">
+                      <input
+                        type="checkbox"
+                        checked={tp.auto_fit}
+                        onChange={(e) => updateTextProp({ auto_fit: e.target.checked })}
+                      />
+                      <span>Auto-Fit Text Inside Box</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tp.wrap}
+                        onChange={(e) => updateTextProp({ wrap: e.target.checked })}
+                      />
+                      <span>Word Wrap</span>
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    When enabled, long dynamic text automatically shrinks its font size so it never
+                    overflows the text box width or height.
+                  </p>
                 </div>
 
                 {/* Text Outline & Shadow */}

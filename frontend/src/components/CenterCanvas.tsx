@@ -434,18 +434,65 @@ export const CenterCanvas: React.FC = () => {
                 const baseFontSize = ov?.font_size ?? tp.font_size;
                 let scaledFontPx = baseFontSize * zoom;
 
-                // Client-side proportional auto-fit approximation matching Pillow renderer
-                if (tp.auto_fit && resolvedText.length > 0 && boxPxW > 10 && boxPxH > 10) {
-                  const charPerLine = Math.max(4, (boxPxW / Math.max(6, scaledFontPx * 0.58)));
-                  const estLines = Math.max(
-                    resolvedText.split('\n').length,
-                    Math.ceil(resolvedText.length / charPerLine)
-                  );
-                  const estTotalH = estLines * scaledFontPx * (tp.line_height || 1.2);
-                  if (estTotalH > boxPxH * 0.95) {
-                    const shrink = Math.sqrt((boxPxH * 0.92) / estTotalH);
-                    scaledFontPx = Math.max(8 * zoom, scaledFontPx * shrink);
+                // Accurate DOM offscreen measurement for Auto-Fit Font Size inside the bounding box
+                if (tp.auto_fit && resolvedText.trim().length > 0 && boxPxW > 12 && boxPxH > 12) {
+                  const paragraphs = resolvedText.split('\n');
+                  const lineHeightMult = Math.max(0.85, tp.line_height || 1.2);
+                  let testSize = scaledFontPx;
+
+                  // Estimate using both horizontal character width and wrapped vertical height
+                  while (testSize > 8 * zoom) {
+                    const avgCharW = testSize * (tp.bold ? 0.62 : 0.55) + tp.letter_spacing * zoom;
+                    const maxCharsPerLine = tp.wrap
+                      ? Math.max(1, Math.floor((boxPxW * 0.94) / Math.max(4, avgCharW)))
+                      : 999999;
+
+                    let totalWrappedLines = 0;
+                    let widestSingleWordOrLinePx = 0;
+
+                    for (const para of paragraphs) {
+                      if (!para) {
+                        totalWrappedLines += 1;
+                        continue;
+                      }
+                      if (!tp.wrap) {
+                        totalWrappedLines += 1;
+                        widestSingleWordOrLinePx = Math.max(
+                          widestSingleWordOrLinePx,
+                          para.length * avgCharW
+                        );
+                      } else {
+                        const words = para.split(' ');
+                        let currLen = 0;
+                        let linesInPara = 1;
+                        for (const w of words) {
+                          widestSingleWordOrLinePx = Math.max(
+                            widestSingleWordOrLinePx,
+                            w.length * avgCharW
+                          );
+                          if (currLen === 0) {
+                            currLen = w.length;
+                          } else if (currLen + 1 + w.length <= maxCharsPerLine) {
+                            currLen += 1 + w.length;
+                          } else {
+                            linesInPara += 1;
+                            currLen = w.length;
+                          }
+                        }
+                        totalWrappedLines += linesInPara;
+                      }
+                    }
+
+                    const totalHeightNeeded = totalWrappedLines * testSize * lineHeightMult;
+                    if (
+                      totalHeightNeeded <= boxPxH * 0.94 &&
+                      widestSingleWordOrLinePx <= boxPxW * 0.96
+                    ) {
+                      break;
+                    }
+                    testSize *= 0.92;
                   }
+                  scaledFontPx = Math.max(8 * zoom, testSize);
                 }
 
                 const textColor = ov?.color || tp.color;

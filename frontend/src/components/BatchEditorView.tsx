@@ -34,6 +34,8 @@ export const BatchEditorView: React.FC = () => {
     setActiveEvent,
     setActiveView,
     saveProjectNow,
+    addDynamicFieldAndElement,
+    removeDynamicField,
   } = useStudioStore();
 
   const [bulkTitlesText, setBulkTitlesText] = useState('');
@@ -42,8 +44,13 @@ export const BatchEditorView: React.FC = () => {
   const [uploadingForEventId, setUploadingForEventId] = useState<string | null>(null);
   const [uploadingGlobalLibrary, setUploadingGlobalLibrary] = useState(false);
   const [expandedSecondaryFields, setExpandedSecondaryFields] = useState(false);
+  const [newDynamicColName, setNewDynamicColName] = useState('');
 
   if (!project) return null;
+
+  const allCustomFieldKeys = Array.from(
+    new Set(project.events.flatMap((ev) => Object.keys(ev.custom_fields || {})))
+  );
 
   // Find shared Logo Group element so users can see/copy shared logos if desired
   const sharedLogoGroup = project.elements.find((e) => e.type === 'logo_group');
@@ -376,25 +383,48 @@ export const BatchEditorView: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
-              <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={expandedSecondaryFields}
-                  onChange={(e) => setExpandedSecondaryFields(e.target.checked)}
-                />
-                <span>Also show Subtitle / Venue / Date columns</span>
-              </label>
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2 text-[11px]">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={expandedSecondaryFields}
+                    onChange={(e) => setExpandedSecondaryFields(e.target.checked)}
+                  />
+                  <span>Also show Subtitle / Venue / Date columns</span>
+                </label>
 
-              {expandedSecondaryFields && project.events.length > 1 && (
+                {expandedSecondaryFields && project.events.length > 1 && (
+                  <button
+                    onClick={applyFirstRowSecondaryFieldsToAll}
+                    className="text-sky-400 hover:underline font-semibold"
+                    title="Copy Row #1's Subtitle, Venue, Address, and Date to all other rows"
+                  >
+                    Sync Row #1 Info to All
+                  </button>
+                )}
+              </div>
+
+              {/* Add Custom Dynamic Field Column right from Batch Editor */}
+              <div className="flex items-center gap-1.5 pt-1">
+                <input
+                  type="text"
+                  placeholder="Add dynamic field (e.g. speaker, host)"
+                  value={newDynamicColName}
+                  onChange={(e) => setNewDynamicColName(e.target.value)}
+                  className="flex-1 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                />
                 <button
-                  onClick={applyFirstRowSecondaryFieldsToAll}
-                  className="text-sky-400 hover:underline font-semibold"
-                  title="Copy Row #1's Subtitle, Venue, Address, and Date to all other rows"
+                  onClick={() => {
+                    if (!newDynamicColName.trim()) return;
+                    addDynamicFieldAndElement(newDynamicColName.trim(), '');
+                    setNewDynamicColName('');
+                  }}
+                  className="px-2.5 py-1 rounded bg-sky-500 hover:bg-sky-400 text-white font-semibold text-xs shrink-0"
                 >
-                  Sync Row #1 Info to All
+                  + Add Dynamic Field
                 </button>
-              )}
+              </div>
             </div>
           </div>
         </div>
@@ -547,6 +577,44 @@ export const BatchEditorView: React.FC = () => {
                               className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-700 text-xs"
                             />
                           </div>
+                        </div>
+                      )}
+
+                      {/* Custom Dynamic Fields inputs for this row */}
+                      {allCustomFieldKeys.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                          {allCustomFieldKeys.map((k) => (
+                            <div key={k}>
+                              <div className="flex items-center justify-between">
+                                <label className="block text-[10px] font-mono text-sky-400">
+                                  {`{{event.custom.${k}}}`}
+                                </label>
+                                {idx === 0 && (
+                                  <button
+                                    onClick={() => removeDynamicField(k)}
+                                    className="text-[9px] text-slate-400 hover:text-rose-400"
+                                    title={`Delete dynamic field "${k}" from all rows`}
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                value={ev.custom_fields?.[k] ?? ''}
+                                onChange={(e) =>
+                                  updateEvent(ev.id, {
+                                    custom_fields: {
+                                      ...(ev.custom_fields || {}),
+                                      [k]: e.target.value,
+                                    },
+                                  })
+                                }
+                                placeholder={`Enter ${k} for tarp #${idx + 1}...`}
+                                className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                              />
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

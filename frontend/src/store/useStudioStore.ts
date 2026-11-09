@@ -59,7 +59,9 @@ interface StudioState {
   redo: () => void;
 
   // Element CRUD & Manipulation
-  addTextElement: (presetRole?: string) => void;
+  addTextElement: (presetRole?: string, customFieldKey?: string, customFieldLabel?: string) => void;
+  addDynamicFieldAndElement: (fieldKey: string, defaultLabel?: string) => void;
+  removeDynamicField: (fieldKey: string) => void;
   addLogoElement: (asset: LogoAsset) => void;
   addLogoGroupElement: (initialLogos?: LogoAsset[]) => void;
   updateElement: (id: string, patch: Partial<CanvasElement>, recordHistory?: boolean) => void;
@@ -341,7 +343,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     scheduleAutoSave(get);
   },
 
-  addTextElement: (presetRole = 'custom') => {
+  addTextElement: (presetRole = 'custom', customFieldKey?: string, customFieldLabel?: string) => {
     const { project, pushHistory } = get();
     if (!project) return;
     pushHistory();
@@ -403,13 +405,25 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       },
     };
 
-    const preset = rolePresets[presetRole] || rolePresets.custom;
+    let preset = rolePresets[presetRole] || rolePresets.custom;
+    if (customFieldKey) {
+      const token = `{{event.custom.${customFieldKey}}}`;
+      preset = {
+        name: customFieldLabel || `Field: ${customFieldKey}`,
+        content: token,
+        binding: token,
+        size: Math.round(34 * scale),
+        y: 52,
+        h: 9,
+      };
+    }
+
     const maxZ = project.elements.reduce((m, e) => Math.max(m, e.z_index), 0);
     const newEl: CanvasElement = {
       id: `el_txt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
       name: preset.name,
       type: 'text',
-      field_role: presetRole,
+      field_role: customFieldKey ? `custom:${customFieldKey}` : presetRole,
       x: 15,
       y: preset.y,
       width: 70,
@@ -450,6 +464,63 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       selectedElementIds: [newEl.id],
       saveStatus: 'unsaved',
       statusMessage: `Added ${preset.name}`,
+    });
+    scheduleAutoSave(get);
+  },
+
+  addDynamicFieldAndElement: (fieldKey, defaultVal = '') => {
+    const { project, pushHistory, addTextElement } = get();
+    if (!project) return;
+    const cleanKey = fieldKey
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (!cleanKey) return;
+
+    pushHistory();
+    // Ensure every event record has this custom_fields key initialized
+    const updatedEvents = project.events.map((ev, idx) => ({
+      ...ev,
+      custom_fields: {
+        ...(ev.custom_fields || {}),
+        [cleanKey]:
+          ev.custom_fields?.[cleanKey] !== undefined
+            ? ev.custom_fields[cleanKey]
+            : defaultVal || `${cleanKey.toUpperCase()} #${idx + 1}`,
+      },
+    }));
+
+    set({
+      project: { ...project, events: updatedEvents },
+      saveStatus: 'unsaved',
+    });
+
+    // Also add a bound text box on the canvas if one doesn't already exist for this token
+    const token = `{{event.custom.${cleanKey}}}`;
+    const alreadyOnCanvas = project.elements.some(
+      (e) => e.type === 'text' && (e.text_props?.binding === token || e.text_props?.content?.includes(token))
+    );
+    if (!alreadyOnCanvas) {
+      addTextElement('custom', cleanKey, `Dynamic: ${cleanKey}`);
+    } else {
+      scheduleAutoSave(get);
+    }
+  },
+
+  removeDynamicField: (fieldKey) => {
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+    const updatedEvents = project.events.map((ev) => {
+      const nextCustom = { ...(ev.custom_fields || {}) };
+      delete nextCustom[fieldKey];
+      return { ...ev, custom_fields: nextCustom };
+    });
+    set({
+      project: { ...project, events: updatedEvents },
+      saveStatus: 'unsaved',
+      statusMessage: `Removed dynamic field "${fieldKey}"`,
     });
     scheduleAutoSave(get);
   },
