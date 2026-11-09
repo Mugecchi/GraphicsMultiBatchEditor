@@ -32,6 +32,7 @@ from fonts import (
     get_available_fonts,
     get_custom_font_files,
     invalidate_font_cache,
+    resolve_font_path,
 )
 from models import (
     CanvasElement,
@@ -273,6 +274,24 @@ def list_fonts() -> Dict[str, Any]:
         "fonts": get_available_fonts(),
         "custom_font_files": get_custom_font_files(),
     }
+
+
+@app.get("/api/fonts/file")
+def serve_font_file(
+    family: str = Query(...),
+    bold: bool = Query(False),
+    italic: bool = Query(False),
+):
+    """Serves the resolved TrueType/OpenType font file so the browser can load any installed server font via @font-face."""
+    font_path = resolve_font_path(family, bold=bold, italic=italic)
+    if not font_path or not font_path.exists():
+        raise HTTPException(status_code=404, detail=f"Font '{family}' not found")
+    media_type = "font/otf" if font_path.suffix.lower() == ".otf" else "font/ttf"
+    return FileResponse(
+        str(font_path),
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.post("/api/fonts/upload")

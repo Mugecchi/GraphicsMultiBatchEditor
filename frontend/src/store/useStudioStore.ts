@@ -131,6 +131,35 @@ function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
 
+export function ensureFontFaceLoaded(family: string) {
+  if (!family || typeof document === 'undefined') return;
+  const clean = family.trim().replace(/^["']|["']$/g, '');
+  if (!clean) return;
+  const styleId = `tarp_fontface_${clean.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  if (document.getElementById(styleId)) return;
+
+  const encoded = encodeURIComponent(clean);
+  const st = document.createElement('style');
+  st.id = styleId;
+  st.textContent = `
+@font-face {
+  font-family: "${clean}";
+  src: local("${clean}"), url("/api/fonts/file?family=${encoded}&bold=false&italic=false");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "${clean}";
+  src: local("${clean} Bold"), local("${clean}"), url("/api/fonts/file?family=${encoded}&bold=true&italic=false");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+`;
+  document.head.appendChild(st);
+}
+
 export const useStudioStore = create<StudioState>((set, get) => ({
   theme: 'dark',
   activeView: 'dashboard',

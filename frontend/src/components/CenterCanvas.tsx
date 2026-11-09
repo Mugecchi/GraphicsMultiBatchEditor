@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RotateCw } from 'lucide-react';
-import { useStudioStore } from '../store/useStudioStore';
+import { ensureFontFaceLoaded, useStudioStore } from '../store/useStudioStore';
 import { computeLogoGroupLayout, resolveTextBinding } from '../utils/layoutEngine';
 import { CanvasElement, LogoAsset } from '../types/studio';
 
@@ -429,6 +429,7 @@ export const CenterCanvas: React.FC = () => {
               {/* ELEMENT TYPE A: TEXT */}
               {el.type === 'text' && el.text_props && (() => {
                 const tp = el.text_props;
+                ensureFontFaceLoaded(tp.font_family);
                 const rawContent = ov?.text_content ?? tp.content;
                 const resolvedText = resolveTextBinding(rawContent, tp.binding, activeEvent);
                 const baseFontSize = ov?.font_size ?? tp.font_size;
@@ -515,7 +516,7 @@ export const CenterCanvas: React.FC = () => {
                 return (
                   <div
                     style={{
-                      fontFamily: tp.font_family,
+                      fontFamily: `"${tp.font_family.replace(/"/g, '')}", Arial, sans-serif`,
                       fontSize: `${scaledFontPx}px`,
                       fontWeight: tp.bold ? 'bold' : 'normal',
                       fontStyle: tp.italic ? 'italic' : 'normal',

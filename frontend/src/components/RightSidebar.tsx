@@ -24,7 +24,7 @@ import {
   Ungroup,
   Unlock,
 } from 'lucide-react';
-import { useStudioStore } from '../store/useStudioStore';
+import { ensureFontFaceLoaded, useStudioStore } from '../store/useStudioStore';
 import { ArrangementMode, TextStyle } from '../types/studio';
 
 export const RightSidebar: React.FC = () => {
@@ -417,12 +417,19 @@ export const RightSidebar: React.FC = () => {
                     </div>
                     <select
                       value={tp.font_family}
-                      onChange={(e) => updateTextProp({ font_family: e.target.value })}
-                      style={{ fontFamily: tp.font_family }}
+                      onChange={(e) => {
+                        ensureFontFaceLoaded(e.target.value);
+                        updateTextProp({ font_family: e.target.value });
+                      }}
+                      style={{ fontFamily: `"${tp.font_family.replace(/"/g, '')}", sans-serif` }}
                       className="w-full px-2 py-1.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
                     >
                       {availableFonts.map((f) => (
-                        <option key={f} value={f} style={{ fontFamily: f }}>
+                        <option
+                          key={f}
+                          value={f}
+                          style={{ fontFamily: `"${f.replace(/"/g, '')}", sans-serif` }}
+                        >
                           {f}
                         </option>
                       ))}

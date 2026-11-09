@@ -1,7 +1,6 @@
 import os
-import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from PIL import ImageFont
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -87,6 +86,22 @@ FONT_MAP: Dict[str, Dict[str, List[str]]] = {
 # Cache discovered system font family -> style -> Path
 _DISCOVERED_FONTS_CACHE: Optional[Dict[str, Dict[str, Path]]] = None
 
+SKIP_FONT_FILES = {
+    "marlett.ttf",
+    "webdings.ttf",
+    "wingding.ttf",
+    "wingdng2.ttf",
+    "wingdng3.ttf",
+    "symbol.ttf",
+    "holomdl2.ttf",
+    "segmdl2.ttf",
+    "segoeicons.ttf",
+    "refspcl.ttf",
+    "bookshelf symbol 7.ttf",
+    "ms outlook.ttf",
+    "mt extra.ttf",
+}
+
 
 def _search_dirs() -> List[Path]:
     dirs = [CUSTOM_FONTS_DIR, WIN_FONTS_DIR, LOCAL_USER_FONTS_DIR] + LINUX_FONTS_DIRS
@@ -115,14 +130,22 @@ def _scan_installed_fonts() -> Dict[str, Dict[str, Path]]:
 
     for root in _search_dirs():
         try:
-            font_files = list(root.glob("*.ttf")) + list(root.glob("*.otf"))
+            font_files: List[Path] = []
+            for ext in ("*.ttf", "*.otf", "*.ttc", "*.TTF", "*.OTF", "*.TTC"):
+                font_files.extend(root.glob(ext))
         except Exception:
             continue
 
+        # Deduplicate paths on case-insensitive filesystems
+        seen_paths = set()
         for fp in font_files:
-            # Skip symbol/dingbat internal system fonts
+            norm = str(fp).lower()
+            if norm in seen_paths:
+                continue
+            seen_paths.add(norm)
+
             low_name = fp.name.lower()
-            if low_name in ("marlett.ttf", "webdings.ttf", "wingding.ttf", "symbol.ttf", "holomdl2.ttf", "segmdl2.ttf"):
+            if low_name in SKIP_FONT_FILES:
                 continue
             try:
                 pil_f = ImageFont.truetype(str(fp), size=16)
@@ -133,7 +156,6 @@ def _scan_installed_fonts() -> Dict[str, Dict[str, Path]]:
                 style_key = _classify_style(style or "Regular")
                 if family not in catalog:
                     catalog[family] = {}
-                # Prefer keeping the first discovered regular/bold/italic match
                 if style_key not in catalog[family]:
                     catalog[family][style_key] = fp
                 if "regular" not in catalog[family]:
@@ -154,8 +176,9 @@ def get_available_fonts() -> List[str]:
     catalog = _scan_installed_fonts()
     names = set(FONT_MAP.keys()) | set(catalog.keys())
     if CUSTOM_FONTS_DIR.exists():
-        for f in CUSTOM_FONTS_DIR.glob("*.[to]tf"):
-            names.add(f.stem)
+        for f in CUSTOM_FONTS_DIR.iterdir():
+            if f.suffix.lower() in (".ttf", ".otf", ".ttc"):
+                names.add(f.stem)
     return sorted(names, key=lambda x: x.lower())
 
 
@@ -185,6 +208,10 @@ def get_custom_font_files() -> List[Dict[str, str]]:
 
 
 def resolve_font_path(font_family: str, bold: bool = False, italic: bool = False) -> Optional[Path]:
+    if not font_family:
+        font_family = "Arial"
+    clean_family = font_family.strip().strip('"').strip("'")
+
     if bold and italic:
         style_key = "bold_italic"
     elif bold:
@@ -195,19 +222,27 @@ def resolve_font_path(font_family: str, bold: bool = False, italic: bool = False
         style_key = "regular"
 
     # 1. Check direct custom font file match
-    for ext in (".ttf", ".otf"):
-        direct = CUSTOM_FONTS_DIR / f"{font_family}{ext}"
+    for ext in (".ttf", ".otf", ".ttc"):
+        direct = CUSTOM_FONTS_DIR / f"{clean_family}{ext}"
         if direct.exists():
             return direct
 
-    # 2. Check dynamically scanned system & custom fonts catalog
+    # 2. Check dynamically scanned system & custom fonts catalog (exact, then case-insensitive, then prefix/substring)
     catalog = _scan_installed_fonts()
-    # Case-insensitive lookup in catalog
-    matched_entry = catalog.get(font_family)
+    matched_entry = catalog.get(clean_family)
+    low_target = clean_family.lower()
+
     if not matched_entry:
-        low_target = font_family.lower()
         for k, v in catalog.items():
             if k.lower() == low_target:
+                matched_entry = v
+                break
+
+    if not matched_entry:
+        # Handle browser font names that include or omit weights like "Arial Black" or "Bahnschrift SemiBold"
+        for k, v in catalog.items():
+            kl = k.lower()
+            if low_target.startswith(kl) or kl.startswith(low_target):
                 matched_entry = v
                 break
 
@@ -221,7 +256,7 @@ def resolve_font_path(font_family: str, bold: bool = False, italic: bool = False
                 return any_path
 
     # 3. Fallback to curated FONT_MAP
-    family_entry = FONT_MAP.get(font_family, FONT_MAP["Arial"])
+    family_entry = FONT_MAP.get(clean_family, FONT_MAP["Arial"])
     candidates = family_entry.get(style_key, []) + family_entry.get("regular", []) + ["arial.ttf"]
     search_roots = _search_dirs()
 
