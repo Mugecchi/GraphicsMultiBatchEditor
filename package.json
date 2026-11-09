@@ -1,0 +1,14 @@
+{
+  "name": "tarpaulin-studio",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Standalone Event Tarpaulin Designer & Batch PNG Generator",
+  "scripts": {
+    "dev": "pnpm --dir frontend dev",
+    "dev:frontend": "pnpm --dir frontend dev",
+    "dev:backend": "python backend/main.py",
+    "build": "pnpm --dir frontend build",
+    "start:prod": "pnpm --dir frontend build && cross-env TARP_ENV=production python backend/main.py",
+    "test": "python -m pytest backend/tests/test_scenarios.py -v"
+  }
+}

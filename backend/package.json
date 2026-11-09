@@ -1,0 +1,10 @@
+{
+  "name": "tarpaulin-studio-backend",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "python main.py",
+    "start": "python main.py",
+    "test": "python -m pytest tests/test_scenarios.py -v"
+  }
+}
