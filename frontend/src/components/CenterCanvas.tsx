@@ -35,6 +35,8 @@ export const CenterCanvas: React.FC = () => {
     updateElement,
     addLogoElement,
     addAssetsToLogoGroup,
+    moveLogoInGroupToIndex,
+    moveEventLogoToIndex,
     updateLogoInGroup,
     updateEventLogo,
     pushHistory,
@@ -66,6 +68,8 @@ export const CenterCanvas: React.FC = () => {
   } | null>(null);
 
   const [selectedLogoItemId, setSelectedLogoItemId] = useState<string | null>(null);
+  const [draggedCanvasLogoId, setDraggedCanvasLogoId] = useState<string | null>(null);
+  const [dragOverCanvasLogoId, setDragOverCanvasLogoId] = useState<string | null>(null);
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
 
   if (!project) return null;
@@ -671,9 +675,53 @@ export const CenterCanvas: React.FC = () => {
                       placements.map((pl) => {
                         const rawItem = logosList.find((l) => l.id === pl.id);
                         const isLogoSelected = isSelected && selectedLogoItemId === pl.id;
+                        const isLogoDragTarget =
+                          isSelected &&
+                          draggedCanvasLogoId &&
+                          dragOverCanvasLogoId === pl.id &&
+                          draggedCanvasLogoId !== pl.id;
                         return (
                           <div
                             key={pl.id}
+                            draggable={isSelected && !el.locked}
+                            onDragStart={(e) => {
+                              if (!isSelected || el.locked) return;
+                              e.stopPropagation();
+                              setDraggedCanvasLogoId(pl.id);
+                              setSelectedLogoItemId(pl.id);
+                              e.dataTransfer.effectAllowed = 'move';
+                            }}
+                            onDragOver={(e) => {
+                              if (!isSelected || !draggedCanvasLogoId) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDragOverCanvasLogoId(pl.id);
+                            }}
+                            onDrop={(e) => {
+                              if (!isSelected || !draggedCanvasLogoId) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (draggedCanvasLogoId !== pl.id) {
+                                const isEventCustom = Boolean(
+                                  activeEvent?.logos && activeEvent.logos.length > 0
+                                );
+                                if (isEventCustom && activeEvent) {
+                                  moveEventLogoToIndex(
+                                    activeEvent.id,
+                                    draggedCanvasLogoId,
+                                    pl.id
+                                  );
+                                } else {
+                                  moveLogoInGroupToIndex(el.id, draggedCanvasLogoId, pl.id);
+                                }
+                              }
+                              setDraggedCanvasLogoId(null);
+                              setDragOverCanvasLogoId(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedCanvasLogoId(null);
+                              setDragOverCanvasLogoId(null);
+                            }}
                             onMouseDown={(e) => {
                               if (isSelected) {
                                 e.stopPropagation();
@@ -688,9 +736,11 @@ export const CenterCanvas: React.FC = () => {
                               height: `${pl.height}px`,
                             }}
                             className={`group/logo ${
-                              isSelected ? 'cursor-pointer' : 'pointer-events-none'
+                              isSelected ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none'
                             } ${
-                              isLogoSelected
+                              isLogoDragTarget
+                                ? 'ring-2 ring-sky-400 bg-sky-500/20 rounded-sm scale-105'
+                                : isLogoSelected
                                 ? 'ring-2 ring-amber-400 bg-amber-500/10 rounded-sm'
                                 : isSelected
                                 ? 'hover:ring-1 hover:ring-amber-400/60 rounded-sm'
@@ -698,7 +748,7 @@ export const CenterCanvas: React.FC = () => {
                             }`}
                             title={
                               isSelected
-                                ? `${pl.name} — Click to resize this individual logo`
+                                ? `${pl.name} — Drag onto another logo to reorder, or click to resize`
                                 : pl.name
                             }
                           >

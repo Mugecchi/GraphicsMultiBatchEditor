@@ -8,6 +8,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { BottomBar } from './components/BottomBar';
 import { GenerateView } from './components/GenerateView';
 import { BatchEditorView } from './components/BatchEditorView';
+import { ScheduleImporterView } from './components/ScheduleImporterView';
 
 export const App: React.FC = () => {
   const {
@@ -129,6 +130,11 @@ export const App: React.FC = () => {
       ) : activeView === 'batch' ? (
         <>
           <BatchEditorView />
+          <BottomBar />
+        </>
+      ) : activeView === 'schedule_importer' ? (
+        <>
+          <ScheduleImporterView />
           <BottomBar />
         </>
       ) : activeView === 'generate' ? (

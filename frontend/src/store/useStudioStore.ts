@@ -10,7 +10,7 @@ import {
 } from '../types/studio';
 import { api } from '../api/client';
 
-export type ActiveView = 'dashboard' | 'editor' | 'batch' | 'generate';
+export type ActiveView = 'dashboard' | 'editor' | 'batch' | 'schedule_importer' | 'generate';
 export type LeftTab = 'layers' | 'elements' | 'logos' | 'events';
 
 interface HistorySnapshot {
@@ -101,6 +101,8 @@ interface StudioState {
   addAssetsToLogoGroup: (groupElementId: string, assets: LogoAsset[]) => void;
   removeLogoFromGroup: (groupElementId: string, itemId: string) => void;
   reorderLogoInGroup: (groupElementId: string, itemId: string, direction: 'left' | 'right') => void;
+  moveLogoInGroupToIndex: (groupElementId: string, draggedItemId: string, targetItemId: string) => void;
+  moveEventLogoToIndex: (eventId: string, draggedItemId: string, targetItemId: string) => void;
   replaceLogoInGroup: (groupElementId: string, itemId: string, newAsset: LogoAsset) => void;
   updateLogoInGroup: (
     groupElementId: string,
@@ -1052,6 +1054,48 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       },
       true
     );
+  },
+
+  moveLogoInGroupToIndex: (groupElementId, draggedItemId, targetItemId) => {
+    if (!draggedItemId || !targetItemId || draggedItemId === targetItemId) return;
+    const { updateElementNested } = get();
+    updateElementNested(
+      groupElementId,
+      (el) => {
+        if (!el.logo_group_props) return el;
+        const list = [...el.logo_group_props.logos];
+        const fromIdx = list.findIndex((l) => l.id === draggedItemId);
+        const toIdx = list.findIndex((l) => l.id === targetItemId);
+        if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return el;
+        const [moved] = list.splice(fromIdx, 1);
+        list.splice(toIdx, 0, moved);
+        el.logo_group_props.logos = list;
+        return el;
+      },
+      true
+    );
+  },
+
+  moveEventLogoToIndex: (eventId, draggedItemId, targetItemId) => {
+    if (!draggedItemId || !targetItemId || draggedItemId === targetItemId) return;
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+    const events = project.events.map((ev) => {
+      if (ev.id !== eventId) return ev;
+      const list = [...(ev.logos || [])];
+      const fromIdx = list.findIndex((l) => l.id === draggedItemId);
+      const toIdx = list.findIndex((l) => l.id === targetItemId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return ev;
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      return { ...ev, logos: list };
+    });
+    set({
+      project: { ...project, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   replaceLogoInGroup: (groupElementId, itemId, newAsset) => {

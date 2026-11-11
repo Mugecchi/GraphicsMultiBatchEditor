@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ArrowLeft,
+  Calendar,
   CheckCircle2,
   CopyPlus,
   Download,
@@ -211,6 +212,18 @@ export const TopBar: React.FC = () => {
           >
             <Layers className="w-3.5 h-3.5" />
             Batch Titles & Logos ({project.events.length})
+          </button>
+          <button
+            onClick={() => setActiveView('schedule_importer')}
+            className={`px-3 py-1 rounded-md text-xs font-semibold transition flex items-center gap-1.5 ${
+              activeView === 'schedule_importer'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            }`}
+            title="Smart Copy-Paste Schedule Importer (Activities, Lead Office, Partners, Venue)"
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            Smart Schedule Importer
           </button>
           <button
             onClick={() => setActiveView('generate')}

@@ -985,8 +985,8 @@ def export_project_tarpaulins(project_id: str, req: ExportRequest) -> Dict[str, 
 
 
 @app.post("/api/demo-project")
-def create_sample_demo_project() -> Dict[str, Any]:
-    """Creates a ready-to-explore sample project with a generated high-res PNG template, 6 partner logos, and 5 events."""
+def create_sample_demo_project(preset: str = Query("roadshow")) -> Dict[str, Any]:
+    """Creates a ready-to-explore sample project: either the original 5-Event Roadshow ('roadshow') or the 39-Activity Orange Campaign ('gad')."""
     project_id = f"proj_{uuid.uuid4().hex[:10]}"
     proj_dir = PROJECTS_DIR / project_id
     (proj_dir / "template").mkdir(parents=True, exist_ok=True)
@@ -1693,6 +1693,148 @@ def create_sample_demo_project() -> Dict[str, Any]:
             raw_campaign_items
         )
     ]
+
+    if preset != "gad":
+        roadshow_elements = [
+            CanvasElement(
+                id=f"el_logogroup_{uuid.uuid4().hex[:6]}",
+                name="Partner Logos Group",
+                type="logo_group",
+                field_role="logos",
+                x=10.0,
+                y=4.0,
+                width=80.0,
+                height=12.0,
+                z_index=1,
+                logo_group_props=LogoGroupProps(
+                    logos=logo_group_items,
+                    arrangement="horizontal",
+                    max_logo_height=85.0,
+                    max_logo_width=35.0,
+                    horizontal_spacing=2.5,
+                    vertical_spacing=4.0,
+                    max_logos_per_row=6,
+                    alignment="center",
+                ),
+            ).model_dump(),
+            CanvasElement(
+                id=f"el_title_{uuid.uuid4().hex[:6]}",
+                name="Event Title",
+                type="text",
+                field_role="title",
+                x=10.0,
+                y=24.0,
+                width=80.0,
+                height=22.0,
+                z_index=2,
+                text_props=TextStyle(
+                    content="{{event.title}}",
+                    binding="{{event.title}}",
+                    font_family="Arial",
+                    font_size=round(60 * scale, 1),
+                    bold=True,
+                    color="#FFFFFF",
+                    align="center",
+                    vertical_align="middle",
+                    auto_fit=True,
+                    outline_enabled=True,
+                    outline_color="#0F172A",
+                    outline_width=round(3 * scale, 1),
+                    shadow_enabled=True,
+                ),
+            ).model_dump(),
+            CanvasElement(
+                id=f"el_sub_{uuid.uuid4().hex[:6]}",
+                name="Subtitle",
+                type="text",
+                field_role="subtitle",
+                x=15.0,
+                y=48.0,
+                width=70.0,
+                height=12.0,
+                z_index=3,
+                text_props=TextStyle(
+                    content="{{event.subtitle}}",
+                    binding="{{event.subtitle}}",
+                    font_family="Arial",
+                    font_size=round(34 * scale, 1),
+                    bold=False,
+                    color="#FACC15",
+                    align="center",
+                    vertical_align="middle",
+                    auto_fit=True,
+                ),
+            ).model_dump(),
+            CanvasElement(
+                id=f"el_venue_{uuid.uuid4().hex[:6]}",
+                name="Venue & Date",
+                type="text",
+                field_role="venue",
+                x=15.0,
+                y=66.0,
+                width=70.0,
+                height=14.0,
+                z_index=4,
+                text_props=TextStyle(
+                    content="{{event.venue}}\n{{event.date}}",
+                    binding="{{event.venue}}\n{{event.date}}",
+                    font_family="Arial",
+                    font_size=round(28 * scale, 1),
+                    bold=True,
+                    color="#E2E8F0",
+                    align="center",
+                    vertical_align="middle",
+                    auto_fit=True,
+                ),
+            ).model_dump(),
+        ]
+        roadshow_stops = [
+            ("Manila Kickoff Summit", "NATIONAL AI & CLOUD SUMMIT — MANILA", "Grand Ballroom, PICC", "Pasay City, Metro Manila", "November 14, 2026 | 9:00 AM"),
+            ("Cebu Tech Forum", "VISAYAS DIGITAL INNOVATION FORUM — CEBU", "Waterfront Cebu City Hotel", "Lahug, Cebu City", "November 21, 2026 | 9:00 AM"),
+            ("Davao Mindanao Expo", "MINDANAO SMART CITIES EXPO — DAVAO", "SMX Convention Center Davao", "Lanang, Davao City", "November 28, 2026 | 9:00 AM"),
+            ("Baguio North Luzon Leg", "CORDILLERA GREEN TECH SYMPOSIUM — BAGUIO", "Baguio Country Club Hall", "Baguio City, Benguet", "December 5, 2026 | 9:00 AM"),
+            ("Iloilo Finale Showcase", "WESTERN VISAYAS STARTUP FINALE — ILOILO", "Iloilo Convention Center", "Mandurriao, Iloilo City", "December 12, 2026 | 9:00 AM"),
+        ]
+        roadshow_events = [
+            EventRecord(
+                id=f"evt_{uuid.uuid4().hex[:8]}",
+                name=r_name,
+                title=r_title,
+                subtitle="Building Resilient Digital Infrastructure Across the Regions",
+                venue=r_venue,
+                address=r_addr,
+                date=r_date,
+                order_index=idx,
+            ).model_dump()
+            for idx, (r_name, r_title, r_venue, r_addr, r_date) in enumerate(roadshow_stops)
+        ]
+        now = now_iso()
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO projects (
+                    id, name, description, is_template, template_json,
+                    elements_json, events_json, assets_json, active_event_id,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    "2026 Regional Tech Roadshow (5 Sample Events)",
+                    "Sample project with 5 regional tarpaulin variations and 6 partner logos.",
+                    0,
+                    json.dumps(template_meta),
+                    json.dumps(roadshow_elements),
+                    json.dumps(roadshow_events),
+                    json.dumps(assets),
+                    roadshow_events[0]["id"],
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        return row_to_project_dict(row)
 
     now = now_iso()
     with get_conn() as conn:

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlignCenter,
   AlignCenterHorizontal,
@@ -15,6 +15,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  GripVertical,
   Group,
   Italic,
   Lock,
@@ -41,6 +42,8 @@ export const RightSidebar: React.FC = () => {
     ungroupSelectedElements,
     removeLogoFromGroup,
     reorderLogoInGroup,
+    moveLogoInGroupToIndex,
+    moveEventLogoToIndex,
     replaceLogoInGroup,
     updateLogoInGroup,
     updateEventLogo,
@@ -50,6 +53,9 @@ export const RightSidebar: React.FC = () => {
     uploadCustomFont,
     addDynamicFieldAndElement,
   } = useStudioStore();
+
+  const [draggedSidebarLogoId, setDraggedSidebarLogoId] = useState<string | null>(null);
+  const [dragOverSidebarLogoId, setDragOverSidebarLogoId] = useState<string | null>(null);
 
   if (!project) return null;
 
@@ -953,17 +959,59 @@ export const RightSidebar: React.FC = () => {
                           const wScalePct = Math.round((item.width_scale ?? 1) * 100);
                           const hScalePct = Math.round((item.height_scale ?? 1) * 100);
                           const isSquareForced = Math.abs((item.aspect_ratio || 1) - 1) < 0.01;
+                          const isDragTarget =
+                            draggedSidebarLogoId &&
+                            dragOverSidebarLogoId === item.id &&
+                            draggedSidebarLogoId !== item.id;
 
                           return (
                             <div
                               key={item.id}
-                              className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-1.5"
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggedSidebarLogoId(item.id);
+                                e.dataTransfer.effectAllowed = 'move';
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                if (draggedSidebarLogoId) {
+                                  setDragOverSidebarLogoId(item.id);
+                                }
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                if (draggedSidebarLogoId && draggedSidebarLogoId !== item.id) {
+                                  if (isEditingEventLogos && activeEvent) {
+                                    moveEventLogoToIndex(
+                                      activeEvent.id,
+                                      draggedSidebarLogoId,
+                                      item.id
+                                    );
+                                  } else {
+                                    moveLogoInGroupToIndex(el.id, draggedSidebarLogoId, item.id);
+                                  }
+                                }
+                                setDraggedSidebarLogoId(null);
+                                setDragOverSidebarLogoId(null);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedSidebarLogoId(null);
+                                setDragOverSidebarLogoId(null);
+                              }}
+                              className={`p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border space-y-1.5 cursor-grab active:cursor-grabbing transition ${
+                                isDragTarget
+                                  ? 'border-sky-400 ring-2 ring-sky-400/50'
+                                  : 'border-slate-200 dark:border-slate-700'
+                              }`}
+                              title="Drag and drop to reorder logos"
                             >
                               <div className="flex items-center justify-between gap-1">
-                                <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                   <img
                                     src={item.url}
                                     alt={item.name}
+                                    draggable={false}
                                     className="w-8 h-8 object-contain bg-checkerboard rounded p-0.5 shrink-0"
                                   />
                                   <div className="truncate">

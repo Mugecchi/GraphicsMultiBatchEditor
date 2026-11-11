@@ -123,12 +123,12 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const handleCreateDemo = async () => {
+  const handleCreateDemo = async (preset: 'roadshow' | 'gad' = 'roadshow') => {
     setCreating(true);
     try {
-      const demo = await api.createDemoProject();
+      const demo = await api.createDemoProject(preset);
       setProject(demo);
-      setActiveView('editor');
+      setActiveView(preset === 'gad' ? 'schedule_importer' : 'editor');
     } catch (err: any) {
       alert(`Failed to create demo project: ${err.message}`);
     } finally {
@@ -201,12 +201,23 @@ export const Dashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={handleCreateDemo}
+              onClick={() => handleCreateDemo('roadshow')}
+              disabled={creating}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm border border-slate-700 transition"
+              title="Load the original 5-Event Sample Roadshow project"
+            >
+              <Layers className="w-4 h-4 text-sky-400" />
+              {creating ? 'Loading...' : 'Load 5-Event Sample Roadshow'}
+            </button>
+
+            <button
+              onClick={() => handleCreateDemo('gad')}
               disabled={creating}
               className="flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-semibold text-sm border border-indigo-400/30 transition"
+              title="Load the 39-Activity 18-Day Orange Campaign Schedule project"
             >
-              <Sparkles className="w-4 h-4" />
-              {creating ? 'Loading...' : 'Load Full 18-Day Orange Campaign (39 Tarps)'}
+              <Calendar className="w-4 h-4" />
+              {creating ? 'Loading...' : '18-Day Schedule Campaign (39 Tarps)'}
             </button>
 
             <label className="flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 cursor-pointer transition">

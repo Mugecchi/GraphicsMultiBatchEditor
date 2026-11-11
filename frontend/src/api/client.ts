@@ -52,8 +52,8 @@ export const api = {
     return handleResponse<ProjectData>(res);
   },
 
-  async createDemoProject(): Promise<ProjectData> {
-    const res = await fetch('/api/demo-project', {
+  async createDemoProject(preset: 'roadshow' | 'gad' = 'roadshow'): Promise<ProjectData> {
+    const res = await fetch(`/api/demo-project?preset=${preset}`, {
       method: 'POST',
     });
     return handleResponse<ProjectData>(res);
