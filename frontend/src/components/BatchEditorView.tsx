@@ -6,7 +6,9 @@ import {
 	ArrowUp,
 	Calendar,
 	CheckSquare,
+	CircleDot,
 	Copy,
+	Crop,
 	Eye,
 	FilePlus2,
 	GripVertical,
@@ -48,6 +50,8 @@ export const BatchEditorView: React.FC = () => {
 		moveEventLogoToIndex,
 		updateLogoInGroup,
 		updateEventLogo,
+		trimLogoAsset,
+		trimAllLogoAssets,
 		updateElementNested,
 	} = useStudioStore();
 
@@ -494,6 +498,17 @@ export const BatchEditorView: React.FC = () => {
 										{project.assets.length > 0 && (
 											<button
 												type="button"
+												onClick={() => trimAllLogoAssets("auto")}
+												className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-0.5"
+												title="Auto-crop empty square/transparent/white canvas borders around all uploaded logos"
+											>
+												<Crop className="w-2.5 h-2.5" />
+												Trim All Spaces
+											</button>
+										)}
+										{project.assets.length > 0 && (
+											<button
+												type="button"
 												onClick={() => {
 													if (!sharedLogoGroup) {
 														addLogoGroupElement(project.assets);
@@ -599,8 +614,37 @@ export const BatchEditorView: React.FC = () => {
 													<span className="text-[10px] font-medium max-w-[75px] truncate">
 														{lg.name}
 													</span>
-													{/* Quick Individual Size & 1:1 Round controls in Shared Logos */}
-													<div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
+													{/* Quick Individual Size, Trim & Circle Fit controls in Shared Logos */}
+													<div
+														onMouseDown={(e) => e.stopPropagation()}
+														onDragStart={(e) => {
+															e.preventDefault();
+															e.stopPropagation();
+														}}
+														className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1"
+													>
+														<button
+															type="button"
+															onClick={() =>
+																trimLogoAsset(lg.asset_id, "auto")
+															}
+															className="px-1 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[8px] font-semibold flex items-center gap-0.5"
+															title="Tightly crop empty transparent or white square space around this logo"
+														>
+															<Crop className="w-2 h-2" />
+															Trim
+														</button>
+														<button
+															type="button"
+															onClick={() =>
+																trimLogoAsset(lg.asset_id, "circle")
+															}
+															className="px-1 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[8px] font-semibold flex items-center gap-0.5"
+															title="Fit & mask this logo into a clean 1:1 transparent circle (removes square corners around round seals)"
+														>
+															<CircleDot className="w-2 h-2" />
+															Circle
+														</button>
 														<button
 															type="button"
 															onClick={() =>
@@ -1399,7 +1443,36 @@ export const BatchEditorView: React.FC = () => {
 																	{lg.name}
 																</span>
 
-																<div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1">
+																<div
+																	onMouseDown={(e) => e.stopPropagation()}
+																	onDragStart={(e) => {
+																		e.preventDefault();
+																		e.stopPropagation();
+																	}}
+																	className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1"
+																>
+																	<button
+																		type="button"
+																		onClick={() =>
+																			trimLogoAsset(lg.asset_id, "auto")
+																		}
+																		className="px-1 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[8px] font-semibold flex items-center gap-0.5"
+																		title="Tightly crop empty transparent or white square space around this logo"
+																	>
+																		<Crop className="w-2 h-2" />
+																		Trim
+																	</button>
+																	<button
+																		type="button"
+																		onClick={() =>
+																			trimLogoAsset(lg.asset_id, "circle")
+																		}
+																		className="px-1 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[8px] font-semibold flex items-center gap-0.5"
+																		title="Fit & mask this logo into a clean 1:1 transparent circle (removes square corners around round seals)"
+																	>
+																		<CircleDot className="w-2 h-2" />
+																		Circle
+																	</button>
 																	<button
 																		type="button"
 																		onClick={() =>

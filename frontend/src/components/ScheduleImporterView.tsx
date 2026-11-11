@@ -12,6 +12,7 @@ import {
 import { useStudioStore } from '../store/useStudioStore';
 import {
   draftsToEventRecords,
+  GAD_CAMPAIGN_2026_COMBINED_TEXT,
   GAD_CAMPAIGN_2026_SAMPLE_TEXT,
   ParsedActivityDraft,
   parseStructuredScheduleText,
@@ -63,6 +64,11 @@ export const ScheduleImporterView: React.FC = () => {
 
   const handleLoadSampleSchedule = () => {
     setScheduleText(GAD_CAMPAIGN_2026_SAMPLE_TEXT);
+    setLastImportedCount(null);
+  };
+
+  const handleLoadCombinedSchedule = () => {
+    setScheduleText(GAD_CAMPAIGN_2026_COMBINED_TEXT);
     setLastImportedCount(null);
   };
 
@@ -159,14 +165,24 @@ export const ScheduleImporterView: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLoadCombinedSchedule}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition"
+                  title="Load the Combined Per-Day Edition (with updated titles from SANA LAST NA.docx)"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Load Combined Per-Day Edition (20 Tarps)
+                </button>
                 <button
                   type="button"
                   onClick={handleLoadSampleSchedule}
                   className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition"
+                  title="Load all 39 individual activities separately"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  Load 18-Day Orange Campaign Sample (39 Activities)
+                  Load Split Edition (39 Activities)
                 </button>
                 {scheduleText && (
                   <button

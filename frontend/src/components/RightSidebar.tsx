@@ -12,7 +12,9 @@ import {
   ArrowLeft,
   ArrowRight,
   Bold,
+  CircleDot,
   Copy,
+  Crop,
   Eye,
   EyeOff,
   GripVertical,
@@ -47,6 +49,8 @@ export const RightSidebar: React.FC = () => {
     replaceLogoInGroup,
     updateLogoInGroup,
     updateEventLogo,
+    trimLogoAsset,
+    trimAllLogoAssets,
     setElementOverride,
     clearElementOverride,
     detectLocalBrowserFonts,
@@ -56,6 +60,7 @@ export const RightSidebar: React.FC = () => {
 
   const [draggedSidebarLogoId, setDraggedSidebarLogoId] = useState<string | null>(null);
   const [dragOverSidebarLogoId, setDragOverSidebarLogoId] = useState<string | null>(null);
+  const [canDragLogoId, setCanDragLogoId] = useState<string | null>(null);
 
   if (!project) return null;
 
@@ -911,19 +916,32 @@ export const RightSidebar: React.FC = () => {
 
                 {/* Ordered Logos Inside Group + Per-Logo Size/Width/Height Controls */}
                 <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-1">
                     <div className="text-[11px] font-semibold text-slate-400">
-                      Individual Logos (Size, Width/Height & Order)
+                      Individual Logos (Size, Fit & Order)
                     </div>
-                    {activeEvent?.logos && activeEvent.logos.length > 0 && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 font-semibold">
-                        Custom Row Logos
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {project.assets.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => trimAllLogoAssets('auto')}
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1 transition"
+                          title="Auto-crop empty square/transparent/white canvas borders around all logos in this project"
+                        >
+                          <Crop className="w-2.5 h-2.5" />
+                          Trim All Spaces
+                        </button>
+                      )}
+                      {activeEvent?.logos && activeEvent.logos.length > 0 && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 font-semibold">
+                          Custom Row
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[10px] text-slate-400 leading-tight">
-                    Adjust <strong>Size %</strong> or fine-tune <strong>W% / H%</strong> on any round
-                    or wide logo so all logos look visually uniform.
+                    Drag the <strong>top handle</strong> to reorder. Use <strong>Trim</strong> or{' '}
+                    <strong>Circle Fit</strong> if a round logo has an empty square canvas around it.
                   </p>
                   {(() => {
                     const isEditingEventLogos = Boolean(
@@ -967,8 +985,12 @@ export const RightSidebar: React.FC = () => {
                           return (
                             <div
                               key={item.id}
-                              draggable
+                              draggable={canDragLogoId === item.id}
                               onDragStart={(e) => {
+                                if (canDragLogoId !== item.id) {
+                                  e.preventDefault();
+                                  return;
+                                }
                                 setDraggedSidebarLogoId(item.id);
                                 e.dataTransfer.effectAllowed = 'move';
                               }}
@@ -993,20 +1015,26 @@ export const RightSidebar: React.FC = () => {
                                 }
                                 setDraggedSidebarLogoId(null);
                                 setDragOverSidebarLogoId(null);
+                                setCanDragLogoId(null);
                               }}
                               onDragEnd={() => {
                                 setDraggedSidebarLogoId(null);
                                 setDragOverSidebarLogoId(null);
+                                setCanDragLogoId(null);
                               }}
-                              className={`p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border space-y-1.5 cursor-grab active:cursor-grabbing transition ${
+                              className={`p-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border space-y-1.5 transition ${
                                 isDragTarget
                                   ? 'border-sky-400 ring-2 ring-sky-400/50'
                                   : 'border-slate-200 dark:border-slate-700'
                               }`}
-                              title="Drag and drop to reorder logos"
                             >
                               <div className="flex items-center justify-between gap-1">
-                                <div className="flex items-center gap-1.5 min-w-0">
+                                <div
+                                  onMouseDown={() => setCanDragLogoId(item.id)}
+                                  onMouseUp={() => setCanDragLogoId(null)}
+                                  className="flex items-center gap-1.5 min-w-0 cursor-grab active:cursor-grabbing flex-1"
+                                  title="Drag here to reorder logo position"
+                                >
                                   <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                   <img
                                     src={item.url}
@@ -1021,6 +1049,10 @@ export const RightSidebar: React.FC = () => {
                                     {!isEditingEventLogos && project.assets.length > 1 && (
                                       <select
                                         value={item.asset_id}
+                                        onMouseDown={(e) => {
+                                          e.stopPropagation();
+                                          setCanDragLogoId(null);
+                                        }}
                                         onChange={(e) => {
                                           const replacement = project.assets.find(
                                             (a) => a.id === e.target.value
@@ -1046,7 +1078,31 @@ export const RightSidebar: React.FC = () => {
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-0.5 shrink-0">
+                                <div
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    setCanDragLogoId(null);
+                                  }}
+                                  className="flex items-center gap-0.5 shrink-0"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => trimLogoAsset(item.asset_id, 'auto')}
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 flex items-center gap-0.5 transition"
+                                    title="Tightly crop empty transparent or white square space around this logo"
+                                  >
+                                    <Crop className="w-2.5 h-2.5" />
+                                    Trim
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => trimLogoAsset(item.asset_id, 'circle')}
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 flex items-center gap-0.5 transition"
+                                    title="Fit & mask this logo into a clean 1:1 transparent circle (removes square corners around round seals)"
+                                  >
+                                    <CircleDot className="w-2.5 h-2.5" />
+                                    Circle
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1064,9 +1120,9 @@ export const RightSidebar: React.FC = () => {
                                         ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
                                         : 'bg-slate-200 dark:bg-slate-700 text-slate-300 hover:bg-slate-600'
                                     }`}
-                                    title="Force 1:1 equal height and width (ideal for round/circular seals)"
+                                    title="Force 1:1 equal height and width box"
                                   >
-                                    1:1 Round
+                                    1:1
                                   </button>
                                   {!isEditingEventLogos && (
                                     <>
@@ -1098,8 +1154,19 @@ export const RightSidebar: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* Per-logo Individual Scale, Width %, and Height % controls */}
-                              <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px]">
+                              {/* Per-logo Individual Scale, Width %, and Height % controls (Never triggers drag) */}
+                              <div
+                                draggable={false}
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setCanDragLogoId(null);
+                                }}
+                                onDragStart={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px]"
+                              >
                                 <div>
                                   <div className="flex items-center justify-between text-slate-400">
                                     <span>Size</span>

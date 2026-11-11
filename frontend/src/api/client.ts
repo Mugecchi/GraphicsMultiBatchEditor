@@ -98,6 +98,24 @@ export const api = {
     return handleResponse<{ uploaded: LogoAsset[]; project: ProjectData }>(res);
   },
 
+  async trimLogo(
+    projectId: string,
+    assetId: string,
+    mode: 'auto' | 'circle' = 'auto'
+  ): Promise<ProjectData> {
+    const res = await fetch(`/api/projects/${projectId}/logos/${assetId}/trim?mode=${mode}`, {
+      method: 'POST',
+    });
+    return handleResponse<ProjectData>(res);
+  },
+
+  async trimAllLogos(projectId: string, mode: 'auto' | 'circle' = 'auto'): Promise<ProjectData> {
+    const res = await fetch(`/api/projects/${projectId}/logos-trim-all?mode=${mode}`, {
+      method: 'POST',
+    });
+    return handleResponse<ProjectData>(res);
+  },
+
   async duplicateProject(projectId: string, newName?: string): Promise<ProjectData> {
     const query = newName ? `?new_name=${encodeURIComponent(newName)}` : '';
     const res = await fetch(`/api/projects/${projectId}/duplicate${query}`, {

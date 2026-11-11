@@ -646,6 +646,239 @@ async def upload_project_logos(
     }
 
 
+def _trim_or_circle_crop_rgba(rgba: Image.Image, mode: str = "auto") -> Image.Image:
+    """
+    Tightly crops empty transparent or solid-color border space around a logo.
+    If mode == 'circle', also crops/masks the logo into a clean 1:1 transparent circle.
+    """
+    from collections import deque
+
+    rgba = rgba.convert("RGBA")
+    w, h = rgba.size
+    if w < 4 or h < 4:
+        return rgba
+
+    px = rgba.load()
+    corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+    opaque_corners = [px[x, y] for (x, y) in corners if px[x, y][3] > 200]
+
+    # Step 1: If corners are opaque and share a uniform background color (e.g. white square box around a round logo),
+    # flood-fill from the outer border pixels to make the outer background transparent.
+    if len(opaque_corners) >= 3:
+        ref_r, ref_g, ref_b, _ = opaque_corners[0]
+        matching_corners = sum(
+            1
+            for (r, g, b, _) in opaque_corners
+            if abs(r - ref_r) + abs(g - ref_g) + abs(b - ref_b) <= 60
+        )
+        if matching_corners >= 3:
+            visited = bytearray(w * h)
+            q: deque[tuple[int, int]] = deque()
+            tol = 55
+
+            def _matches_bg(x: int, y: int) -> bool:
+                r, g, b, a = px[x, y]
+                if a <= 25:
+                    return True
+                return (abs(r - ref_r) + abs(g - ref_g) + abs(b - ref_b)) <= tol
+
+            for bx in range(w):
+                for by in (0, h - 1):
+                    idx = by * w + bx
+                    if not visited[idx] and _matches_bg(bx, by):
+                        visited[idx] = 1
+                        q.append((bx, by))
+            for by in range(h):
+                for bx in (0, w - 1):
+                    idx = by * w + bx
+                    if not visited[idx] and _matches_bg(bx, by):
+                        visited[idx] = 1
+                        q.append((bx, by))
+
+            while q:
+                cx, cy = q.popleft()
+                px[cx, cy] = (0, 0, 0, 0)
+                for nx, ny in ((cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)):
+                    if 0 <= nx < w and 0 <= ny < h:
+                        nidx = ny * w + nx
+                        if not visited[nidx] and _matches_bg(nx, ny):
+                            visited[nidx] = 1
+                            q.append((nx, ny))
+
+    # Step 2: Tight crop to non-transparent bounding box
+    alpha = rgba.getchannel("A")
+    mask = alpha.point(lambda p: 255 if p > 18 else 0)
+    bbox = mask.getbbox()
+    if bbox:
+        bw = bbox[2] - bbox[0]
+        bh = bbox[3] - bbox[1]
+        if bw >= 4 and bh >= 4:
+            pad = 1
+            left = max(0, bbox[0] - pad)
+            top = max(0, bbox[1] - pad)
+            right = min(rgba.width, bbox[2] + pad)
+            bottom = min(rgba.height, bbox[3] + pad)
+            rgba = rgba.crop((left, top, right, bottom))
+
+    # Step 3: Optional 1:1 circular crop/mask for round seals
+    if mode == "circle":
+        cw, ch = rgba.size
+        side = min(cw, ch)
+        cx_off = (cw - side) // 2
+        cy_off = (ch - side) // 2
+        rgba = rgba.crop((cx_off, cy_off, cx_off + side, cy_off + side))
+
+        # Apply supersampled anti-aliased circular mask
+        scale = 2
+        hi_mask = Image.new("L", (side * scale, side * scale), 0)
+        draw = ImageDraw.Draw(hi_mask)
+        draw.ellipse((0, 0, side * scale - 1, side * scale - 1), fill=255)
+        circle_mask = hi_mask.resize((side, side), Image.Resampling.LANCZOS)
+
+        existing_a = rgba.getchannel("A")
+        combined_a = Image. composite(existing_a, Image.new("L", (side, side), 0), circle_mask)
+        rgba.putalpha(combined_a)
+
+    return rgba
+
+
+def _apply_trimmed_logo_to_project_dict(
+    proj: Dict[str, Any],
+    asset_id: str,
+    mode: str = "auto",
+) -> bool:
+    assets: List[Dict[str, Any]] = proj.get("assets") or []
+    target_asset = next((a for a in assets if a.get("id") == asset_id), None)
+    if not target_asset:
+        return False
+
+    rel_path = target_asset.get("relative_path", "")
+    if not rel_path:
+        return False
+    full_path = STORAGE_DIR / rel_path
+    if not full_path.exists():
+        return False
+
+    with Image.open(full_path) as img:
+        processed = _trim_or_circle_crop_rgba(img, mode=mode)
+        nw, nh = processed.size
+        buf = io.BytesIO()
+        processed.save(buf, format="PNG")
+        save_bytes = buf.getvalue()
+
+    full_path.write_bytes(save_bytes)
+    new_ar = nw / max(1.0, float(nh))
+    cache_bust = uuid.uuid4().hex[:6]
+    new_url = f"/storage/{rel_path}?v={cache_bust}"
+
+    target_asset["natural_width"] = nw
+    target_asset["natural_height"] = nh
+    target_asset["aspect_ratio"] = new_ar
+    target_asset["url"] = new_url
+
+    # Update all LogoGroup elements & single Logo elements
+    for el in proj.get("elements") or []:
+        if el.get("type") == "logo_group" and el.get("logo_group_props"):
+            for lg in el["logo_group_props"].get("logos") or []:
+                if lg.get("asset_id") == asset_id:
+                    lg["natural_width"] = nw
+                    lg["natural_height"] = nh
+                    lg["aspect_ratio"] = new_ar
+                    lg["url"] = new_url
+        elif el.get("type") == "logo" and el.get("logo_props"):
+            lp = el["logo_props"]
+            if lp.get("asset_id") == asset_id:
+                lp["natural_width"] = nw
+                lp["natural_height"] = nh
+                lp["aspect_ratio"] = new_ar
+                lp["url"] = new_url
+
+    # Update all Event-specific custom logo arrays
+    for ev in proj.get("events") or []:
+        for lg in ev.get("logos") or []:
+            if lg.get("asset_id") == asset_id:
+                lg["natural_width"] = nw
+                lg["natural_height"] = nh
+                lg["aspect_ratio"] = new_ar
+                lg["url"] = new_url
+
+    return True
+
+
+@app.post("/api/projects/{project_id}/logos/{asset_id}/trim")
+def trim_project_logo(
+    project_id: str,
+    asset_id: str,
+    mode: str = Query("auto", pattern="^(auto|circle)$"),
+) -> Dict[str, Any]:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        proj = row_to_project_dict(row)
+
+    ok = _apply_trimmed_logo_to_project_dict(proj, asset_id=asset_id, mode=mode)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Logo asset not found on disk.")
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE projects
+            SET assets_json = ?, elements_json = ?, events_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                json.dumps(proj["assets"]),
+                json.dumps(proj["elements"]),
+                json.dumps(proj["events"]),
+                now_iso(),
+                project_id,
+            ),
+        )
+        conn.commit()
+        updated_row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+
+    return row_to_project_dict(updated_row)
+
+
+@app.post("/api/projects/{project_id}/logos-trim-all")
+def trim_all_project_logos(
+    project_id: str,
+    mode: str = Query("auto", pattern="^(auto|circle)$"),
+) -> Dict[str, Any]:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        proj = row_to_project_dict(row)
+
+    for asset in proj.get("assets") or []:
+        aid = asset.get("id")
+        if aid:
+            _apply_trimmed_logo_to_project_dict(proj, asset_id=aid, mode=mode)
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE projects
+            SET assets_json = ?, elements_json = ?, events_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                json.dumps(proj["assets"]),
+                json.dumps(proj["elements"]),
+                json.dumps(proj["events"]),
+                now_iso(),
+                project_id,
+            ),
+        )
+        conn.commit()
+        updated_row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+
+    return row_to_project_dict(updated_row)
+
+
 @app.post("/api/projects/{project_id}/duplicate")
 def duplicate_project(project_id: str, new_name: Optional[str] = Query(None)) -> Dict[str, Any]:
     with get_conn() as conn:

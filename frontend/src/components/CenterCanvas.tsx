@@ -683,9 +683,12 @@ export const CenterCanvas: React.FC = () => {
                         return (
                           <div
                             key={pl.id}
-                            draggable={isSelected && !el.locked}
+                            draggable={isSelected && !el.locked && !interaction}
                             onDragStart={(e) => {
-                              if (!isSelected || el.locked) return;
+                              if (!isSelected || el.locked || interaction) {
+                                e.preventDefault();
+                                return;
+                              }
                               e.stopPropagation();
                               setDraggedCanvasLogoId(pl.id);
                               setSelectedLogoItemId(pl.id);
@@ -772,7 +775,13 @@ export const CenterCanvas: React.FC = () => {
                               <>
                                 {/* Corner handle: proportional individual scale */}
                                 <div
+                                  draggable={false}
+                                  onDragStart={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
                                   onMouseDown={(e) => {
+                                    e.preventDefault();
                                     e.stopPropagation();
                                     pushHistory();
                                     setInteraction({
@@ -793,7 +802,13 @@ export const CenterCanvas: React.FC = () => {
                                 />
                                 {/* Right handle: individual logo width */}
                                 <div
+                                  draggable={false}
+                                  onDragStart={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
                                   onMouseDown={(e) => {
+                                    e.preventDefault();
                                     e.stopPropagation();
                                     pushHistory();
                                     setInteraction({
@@ -814,7 +829,13 @@ export const CenterCanvas: React.FC = () => {
                                 />
                                 {/* Bottom handle: individual logo height */}
                                 <div
+                                  draggable={false}
+                                  onDragStart={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
                                   onMouseDown={(e) => {
+                                    e.preventDefault();
                                     e.stopPropagation();
                                     pushHistory();
                                     setInteraction({

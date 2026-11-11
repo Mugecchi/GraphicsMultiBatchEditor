@@ -116,6 +116,8 @@ interface StudioState {
     patch: Partial<LogoGroupItem>,
     recordHistory?: boolean
   ) => void;
+  trimLogoAsset: (assetId: string, mode?: 'auto' | 'circle') => Promise<void>;
+  trimAllLogoAssets: (mode?: 'auto' | 'circle') => Promise<void>;
 
   // Event Management & Overrides
   setActiveEvent: (eventId: string) => void;
@@ -1155,6 +1157,55 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       saveStatus: 'unsaved',
     });
     scheduleAutoSave(get);
+  },
+
+  trimLogoAsset: async (assetId, mode = 'auto') => {
+    const { project, saveProjectNow } = get();
+    if (!project) return;
+    set({
+      saveStatus: 'saving',
+      statusMessage: mode === 'circle' ? 'Circle-cropping logo...' : 'Trimming empty logo space...',
+    });
+    try {
+      await saveProjectNow();
+      const updated = await api.trimLogo(project.id, assetId, mode);
+      set({
+        project: updated,
+        saveStatus: 'saved',
+        statusMessage:
+          mode === 'circle'
+            ? 'Cropped logo into a tight 1:1 circle'
+            : 'Trimmed empty canvas space around logo',
+      });
+    } catch (err: any) {
+      set({
+        saveStatus: 'error',
+        statusMessage: `Trim failed: ${err?.message || 'Unknown error'}`,
+      });
+    }
+  },
+
+  trimAllLogoAssets: async (mode = 'auto') => {
+    const { project, saveProjectNow } = get();
+    if (!project) return;
+    set({
+      saveStatus: 'saving',
+      statusMessage: 'Auto-trimming empty space on all project logos...',
+    });
+    try {
+      await saveProjectNow();
+      const updated = await api.trimAllLogos(project.id, mode);
+      set({
+        project: updated,
+        saveStatus: 'saved',
+        statusMessage: 'Auto-trimmed empty canvas margins on all logos!',
+      });
+    } catch (err: any) {
+      set({
+        saveStatus: 'error',
+        statusMessage: `Trim all failed: ${err?.message || 'Unknown error'}`,
+      });
+    }
   },
 
   setActiveEvent: (eventId) => {
