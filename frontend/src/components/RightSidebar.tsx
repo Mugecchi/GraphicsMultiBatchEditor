@@ -764,16 +764,23 @@ export const RightSidebar: React.FC = () => {
                   </label>
                   <select
                     value={gp.arrangement}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const nextArr = e.target.value as ArrangementMode;
                       updateElementNested(
                         el.id,
                         (d) => {
-                          d.logo_group_props!.arrangement = e.target.value as ArrangementMode;
+                          d.logo_group_props!.arrangement = nextArr;
+                          if (nextArr === 'auto') {
+                            d.logo_group_props!.alignment = 'center';
+                            d.logo_group_props!.vertical_alignment = 'middle';
+                            d.logo_group_props!.optical_balance = true;
+                            d.x = Number(((100 - d.width) / 2).toFixed(2));
+                          }
                           return d;
                         },
                         true
-                      )
-                    }
+                      );
+                    }}
                     className="w-full px-2 py-1.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-700 font-semibold text-sky-400"
                   >
                     <option value="auto">✨ Smart Auto-Fit (Best Visual Balance)</option>
@@ -920,7 +927,8 @@ export const RightSidebar: React.FC = () => {
                   <div>
                     <label className="block text-[10px] text-slate-400">Row Alignment</label>
                     <select
-                      value={gp.alignment}
+                      value={gp.arrangement === 'auto' ? 'center' : gp.alignment}
+                      disabled={gp.arrangement === 'auto'}
                       onChange={(e) =>
                         updateElementNested(
                           el.id,
@@ -934,10 +942,15 @@ export const RightSidebar: React.FC = () => {
                           true
                         )
                       }
-                      className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-700"
+                      title={
+                        gp.arrangement === 'auto'
+                          ? 'Smart Auto-Fit always centers logos horizontally & vertically'
+                          : undefined
+                      }
+                      className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-700 disabled:opacity-60"
                     >
                       <option value="left">Left</option>
-                      <option value="center">Center</option>
+                      <option value="center">Center (Auto-Fit Locked)</option>
                       <option value="right">Right</option>
                     </select>
                   </div>
@@ -1402,6 +1415,7 @@ export const RightSidebar: React.FC = () => {
                     className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-700"
                   >
                     <option value="">Use Shared Arrangement</option>
+                    <option value="auto">✨ Smart Auto-Fit (Centered)</option>
                     <option value="horizontal">Horizontal</option>
                     <option value="grid">Grid</option>
                     <option value="centered">Centered</option>

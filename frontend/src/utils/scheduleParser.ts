@@ -687,22 +687,112 @@ export function parseStructuredScheduleText(rawText: string): ParsedActivityDraf
   return results;
 }
 
+export interface DraftsConversionOptions {
+  startIndex?: number;
+  existingEvents?: EventRecord[];
+  preserveLogos?: boolean;
+}
+
+function extractDayKey(text: string): string | null {
+  if (!text) return null;
+  const upper = text.toUpperCase();
+  if (upper.includes('PRE-CAMPAIGN') || upper.includes('PRE CAMPAIGN')) {
+    return 'PRE-CAMPAIGN';
+  }
+  const dayMatch = upper.match(/\bDAY\s*(\d+)\b/);
+  if (dayMatch) {
+    return `DAY_${dayMatch[1]}`;
+  }
+  return null;
+}
+
+function extractActivityKey(name: string, activityNo?: string): string | null {
+  const combined = `${name} ${activityNo || ''}`.toUpperCase();
+  const actMatch = combined.match(/\bACTIVITY\s*(\d+)\b/);
+  if (actMatch) return `ACT_${actMatch[1]}`;
+  if (combined.includes('IN-PERSON')) return 'IN_PERSON';
+  if (combined.includes('ONLINE')) return 'ONLINE';
+  return null;
+}
+
 export function draftsToEventRecords(
   drafts: ParsedActivityDraft[],
-  startIndex = 0
+  startIndexOrOptions: number | DraftsConversionOptions = 0
 ): EventRecord[] {
-  return drafts.map((d, i) => ({
-    id: `evt_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 5)}`,
-    name: d.name,
-    title: d.title,
-    subtitle: d.subtitle,
-    venue: d.venue,
-    address: d.address,
-    date: d.date,
-    custom_fields: d.custom_fields,
-    logos: [],
-    element_visibility: {},
-    element_overrides: {},
-    order_index: startIndex + i,
-  }));
+  const opts: DraftsConversionOptions =
+    typeof startIndexOrOptions === 'number'
+      ? { startIndex: startIndexOrOptions }
+      : startIndexOrOptions;
+
+  const startIndex = opts.startIndex ?? 0;
+  const existingEvents = opts.existingEvents || [];
+  const preserveLogos = Boolean(opts.preserveLogos && existingEvents.length > 0);
+
+  return drafts.map((d, i) => {
+    let matchedExisting: EventRecord | undefined;
+
+    if (preserveLogos) {
+      const draftDayKey =
+        extractDayKey(d.custom_fields?.day_header || '') || extractDayKey(d.name);
+      const draftActKey = extractActivityKey(d.name, d.custom_fields?.activity_no);
+
+      // 1. Exact name or Day + Activity match
+      matchedExisting = existingEvents.find((ev) => {
+        if (ev.name.trim().toLowerCase() === d.name.trim().toLowerCase()) return true;
+        const evDayKey =
+          extractDayKey(ev.custom_fields?.day_header || '') || extractDayKey(ev.name);
+        const evActKey = extractActivityKey(ev.name, ev.custom_fields?.activity_no);
+        if (draftDayKey && evDayKey === draftDayKey && draftActKey && evActKey === draftActKey) {
+          return true;
+        }
+        return false;
+      });
+
+      // 2. Same Day match that already has custom logos configured (helpful when switching between 39-row Split and 20-row Combined)
+      if (!matchedExisting && draftDayKey) {
+        matchedExisting =
+          existingEvents.find((ev) => {
+            const evDayKey =
+              extractDayKey(ev.custom_fields?.day_header || '') || extractDayKey(ev.name);
+            return evDayKey === draftDayKey && ev.logos && ev.logos.length > 0;
+          }) ||
+          existingEvents.find((ev) => {
+            const evDayKey =
+              extractDayKey(ev.custom_fields?.day_header || '') || extractDayKey(ev.name);
+            return evDayKey === draftDayKey;
+          });
+      }
+
+      // 3. Fallback to same row index (row i -> row i)
+      if (!matchedExisting && existingEvents[i]) {
+        matchedExisting = existingEvents[i];
+      }
+    }
+
+    return {
+      id:
+        matchedExisting?.id ||
+        `evt_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 5)}`,
+      name: d.name,
+      title: d.title,
+      subtitle: d.subtitle,
+      venue: d.venue,
+      address: d.address,
+      date: d.date,
+      custom_fields: d.custom_fields,
+      logos:
+        preserveLogos && matchedExisting?.logos
+          ? JSON.parse(JSON.stringify(matchedExisting.logos))
+          : [],
+      element_visibility:
+        preserveLogos && matchedExisting?.element_visibility
+          ? { ...matchedExisting.element_visibility }
+          : {},
+      element_overrides:
+        preserveLogos && matchedExisting?.element_overrides
+          ? JSON.parse(JSON.stringify(matchedExisting.element_overrides))
+          : {},
+      order_index: startIndex + i,
+    };
+  });
 }

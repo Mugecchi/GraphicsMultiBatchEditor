@@ -71,6 +71,7 @@ export const BatchEditorView: React.FC = () => {
 	const [bulkTitlesText, setBulkTitlesText] = useState("");
 	const [countToGenerate, setCountToGenerate] = useState<number>(5);
 	const [replaceExistingOnPaste, setReplaceExistingOnPaste] = useState(false);
+	const [keepLogosOnPaste, setKeepLogosOnPaste] = useState(true);
 	const [uploadingForEventId, setUploadingForEventId] = useState<string | null>(
 		null,
 	);
@@ -186,23 +187,39 @@ export const BatchEditorView: React.FC = () => {
 
 		if (replaceExistingOnPaste) {
 			const templateEv = project.events[0];
-			const freshEvents: EventRecord[] = lines.map((titleText, i) => ({
-				id: `evt_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 5)}`,
-				name:
-					titleText.length > 42 ? `${titleText.slice(0, 42)}...` : titleText,
-				title: titleText,
-				subtitle: templateEv?.subtitle ?? "",
-				venue: templateEv?.venue ?? "",
-				address: templateEv?.address ?? "",
-				date: templateEv?.date ?? "",
-				custom_fields: templateEv?.custom_fields
-					? { ...templateEv.custom_fields }
-					: {},
-				logos: [],
-				element_visibility: {},
-				element_overrides: {},
-				order_index: i,
-			}));
+			const freshEvents: EventRecord[] = lines.map((titleText, i) => {
+				const existingRow = project.events[i];
+				return {
+					id:
+						existingRow?.id ||
+						`evt_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 5)}`,
+					name:
+						titleText.length > 42 ? `${titleText.slice(0, 42)}...` : titleText,
+					title: titleText,
+					subtitle: existingRow?.subtitle ?? templateEv?.subtitle ?? "",
+					venue: existingRow?.venue ?? templateEv?.venue ?? "",
+					address: existingRow?.address ?? templateEv?.address ?? "",
+					date: existingRow?.date ?? templateEv?.date ?? "",
+					custom_fields: existingRow?.custom_fields
+						? { ...existingRow.custom_fields }
+						: templateEv?.custom_fields
+							? { ...templateEv.custom_fields }
+							: {},
+					logos:
+						keepLogosOnPaste && existingRow?.logos
+							? JSON.parse(JSON.stringify(existingRow.logos))
+							: [],
+					element_visibility:
+						keepLogosOnPaste && existingRow?.element_visibility
+							? { ...existingRow.element_visibility }
+							: {},
+					element_overrides:
+						keepLogosOnPaste && existingRow?.element_overrides
+							? JSON.parse(JSON.stringify(existingRow.element_overrides))
+							: {},
+					order_index: i,
+				};
+			});
 			setAllEvents(freshEvents);
 		} else {
 			addBulkEventsFromTitles(lines);
@@ -448,14 +465,27 @@ export const BatchEditorView: React.FC = () => {
 						/>
 
 						<div className="flex flex-wrap items-center justify-between gap-3">
-							<label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-								<input
-									type="checkbox"
-									checked={replaceExistingOnPaste}
-									onChange={(e) => setReplaceExistingOnPaste(e.target.checked)}
-								/>
-								<span>Replace existing rows instead of appending</span>
-							</label>
+							<div className="flex flex-wrap items-center gap-3">
+								<label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
+									<input
+										type="checkbox"
+										checked={replaceExistingOnPaste}
+										onChange={(e) => setReplaceExistingOnPaste(e.target.checked)}
+									/>
+									<span>Replace existing rows instead of appending</span>
+								</label>
+								{replaceExistingOnPaste && (
+									<label className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 cursor-pointer">
+										<input
+											type="checkbox"
+											checked={keepLogosOnPaste}
+											onChange={(e) => setKeepLogosOnPaste(e.target.checked)}
+											className="accent-emerald-500"
+										/>
+										<span>Keep existing row logos</span>
+									</label>
+								)}
+							</div>
 
 							<div className="flex items-center gap-2">
 								<button
@@ -641,9 +671,7 @@ export const BatchEditorView: React.FC = () => {
 													>
 														<button
 															type="button"
-															onClick={() =>
-																trimLogoAsset(lg.asset_id, "auto")
-															}
+															onClick={() => trimLogoAsset(lg.asset_id, "auto")}
 															className="px-1 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[8px] font-semibold flex items-center gap-0.5"
 															title="Tightly crop empty transparent or white square space around this logo"
 														>
@@ -843,74 +871,66 @@ export const BatchEditorView: React.FC = () => {
 													(l) => l.asset_id === asset.id,
 												);
 												return (
-												<div
-													key={asset.id}
-													onClick={() => {
-														if (renamingPoolAssetId === asset.id) return;
-														toggleAssetInSharedGroup(asset);
-													}}
-													className={`group relative p-1.5 rounded bg-checkerboard border flex flex-col items-center justify-center cursor-pointer transition ${
-														inShared
-															? "border-sky-500 ring-1 ring-sky-500/40"
-															: "border-slate-200 dark:border-slate-800 opacity-75 hover:opacity-100"
-													}`}
-													title={`${asset.name} (${asset.natural_width}×${asset.natural_height}) — Click to ${
-														inShared ? "remove from" : "add to"
-													} Shared Logos`}
-												>
-													<div className="absolute top-0.5 right-0.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition bg-slate-900/85 rounded p-0.5 z-10">
-														<button
-															type="button"
-															onClick={(e) => {
-																e.stopPropagation();
-																setRenamingPoolAssetId(asset.id);
-																setRenamePoolVal(asset.name);
-															}}
-															className="p-0.5 rounded hover:bg-sky-500/30 text-sky-300"
-															title="Rename logo in pool"
-														>
-															<Pencil className="w-2.5 h-2.5" />
-														</button>
-														<button
-															type="button"
-															onClick={(e) => {
-																e.stopPropagation();
-																if (
-																	window.confirm(
-																		`Delete logo "${asset.name}" from the project pool and remove it from all tarpaulins?`,
-																	)
-																) {
-																	deleteLogoAsset(asset.id);
+													<div
+														key={asset.id}
+														onClick={() => {
+															if (renamingPoolAssetId === asset.id) return;
+															toggleAssetInSharedGroup(asset);
+														}}
+														className={`group relative p-1.5 rounded bg-checkerboard border flex flex-col items-center justify-center cursor-pointer transition ${
+															inShared
+																? "border-sky-500 ring-1 ring-sky-500/40"
+																: "border-slate-200 dark:border-slate-800 opacity-75 hover:opacity-100"
+														}`}
+														title={`${asset.name} (${asset.natural_width}×${asset.natural_height}) — Click to ${
+															inShared ? "remove from" : "add to"
+														} Shared Logos`}
+													>
+														<div className="absolute top-0.5 right-0.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition bg-slate-900/85 rounded p-0.5 z-10">
+															<button
+																type="button"
+																onClick={(e) => {
+																	e.stopPropagation();
+																	setRenamingPoolAssetId(asset.id);
+																	setRenamePoolVal(asset.name);
+																}}
+																className="p-0.5 rounded hover:bg-sky-500/30 text-sky-300"
+																title="Rename logo in pool"
+															>
+																<Pencil className="w-2.5 h-2.5" />
+															</button>
+															<button
+																type="button"
+																onClick={(e) => {
+																	e.stopPropagation();
+																	if (
+																		window.confirm(
+																			`Delete logo "${asset.name}" from the project pool and remove it from all tarpaulins?`,
+																		)
+																	) {
+																		deleteLogoAsset(asset.id);
+																	}
+																}}
+																className="p-0.5 rounded hover:bg-rose-500/30 text-rose-400"
+																title="Delete logo from pool"
+															>
+																<Trash2 className="w-2.5 h-2.5" />
+															</button>
+														</div>
+														<img
+															src={asset.url}
+															alt={asset.name}
+															className="h-7 object-contain"
+														/>
+														{renamingPoolAssetId === asset.id ? (
+															<input
+																type="text"
+																value={renamePoolVal}
+																onClick={(e) => e.stopPropagation()}
+																onChange={(e) =>
+																	setRenamePoolVal(e.target.value)
 																}
-															}}
-															className="p-0.5 rounded hover:bg-rose-500/30 text-rose-400"
-															title="Delete logo from pool"
-														>
-															<Trash2 className="w-2.5 h-2.5" />
-														</button>
-													</div>
-													<img
-														src={asset.url}
-														alt={asset.name}
-														className="h-7 object-contain"
-													/>
-													{renamingPoolAssetId === asset.id ? (
-														<input
-															type="text"
-															value={renamePoolVal}
-															onClick={(e) => e.stopPropagation()}
-															onChange={(e) => setRenamePoolVal(e.target.value)}
-															onBlur={() => {
-																if (renamePoolVal.trim()) {
-																	renameLogoAsset(
-																		asset.id,
-																		renamePoolVal.trim(),
-																	);
-																}
-																setRenamingPoolAssetId(null);
-															}}
-															onKeyDown={(e) => {
-																if (e.key === "Enter") {
+																onBlur={() => {
 																	if (renamePoolVal.trim()) {
 																		renameLogoAsset(
 																			asset.id,
@@ -918,22 +938,32 @@ export const BatchEditorView: React.FC = () => {
 																		);
 																	}
 																	setRenamingPoolAssetId(null);
-																} else if (e.key === "Escape") {
-																	setRenamingPoolAssetId(null);
-																}
-															}}
-															autoFocus
-															className="w-full mt-0.5 px-1 py-0.5 rounded bg-slate-900 border border-sky-500 text-[9px] text-white outline-none"
-														/>
-													) : (
-														<span className="text-[9px] truncate w-full text-center mt-0.5 text-slate-300 font-medium">
-															{inShared ? "✓ " : "+ "}
-															{asset.name}
-														</span>
-													)}
-												</div>
-											);
-										})}
+																}}
+																onKeyDown={(e) => {
+																	if (e.key === "Enter") {
+																		if (renamePoolVal.trim()) {
+																			renameLogoAsset(
+																				asset.id,
+																				renamePoolVal.trim(),
+																			);
+																		}
+																		setRenamingPoolAssetId(null);
+																	} else if (e.key === "Escape") {
+																		setRenamingPoolAssetId(null);
+																	}
+																}}
+																autoFocus
+																className="w-full mt-0.5 px-1 py-0.5 rounded bg-slate-900 border border-sky-500 text-[9px] text-white outline-none"
+															/>
+														) : (
+															<span className="text-[9px] truncate w-full text-center mt-0.5 text-slate-300 font-medium">
+																{inShared ? "✓ " : "+ "}
+																{asset.name}
+															</span>
+														)}
+													</div>
+												);
+											})}
 									</div>
 								)}
 							</div>
@@ -1731,80 +1761,85 @@ export const BatchEditorView: React.FC = () => {
 											</div>
 
 											{/* Quick-Toggle Pills from Project Logo Pool */}
-											{project.assets.length > 0 && (() => {
-												const rowQuery = (rowLogoSearches[ev.id] ?? poolLogoSearch)
-													.trim()
-													.toLowerCase();
-												const matchingAssets = project.assets.filter((a) =>
-													!rowQuery
-														? true
-														: a.name.toLowerCase().includes(rowQuery),
-												);
-												return (
-													<div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-														<span className="text-[10px] text-slate-400">
-															Toggle from Pool:
-														</span>
-														<div className="relative w-36 mr-1">
-															<Search className="w-2.5 h-2.5 text-slate-400 absolute left-2 top-1.5" />
-															<input
-																type="text"
-																placeholder="Search logo..."
-																value={rowLogoSearches[ev.id] ?? ""}
-																onChange={(e) =>
-																	setRowLogoSearches((prev) => ({
-																		...prev,
-																		[ev.id]: e.target.value,
-																	}))
-																}
-																className="w-full pl-5 pr-4 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] outline-none focus:border-sky-500"
-															/>
-															{rowLogoSearches[ev.id] && (
-																<button
-																	type="button"
-																	onClick={() =>
+											{project.assets.length > 0 &&
+												(() => {
+													const rowQuery = (
+														rowLogoSearches[ev.id] ?? poolLogoSearch
+													)
+														.trim()
+														.toLowerCase();
+													const matchingAssets = project.assets.filter((a) =>
+														!rowQuery
+															? true
+															: a.name.toLowerCase().includes(rowQuery),
+													);
+													return (
+														<div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+															<span className="text-[10px] text-slate-400">
+																Toggle from Pool:
+															</span>
+															<div className="relative w-36 mr-1">
+																<Search className="w-2.5 h-2.5 text-slate-400 absolute left-2 top-1.5" />
+																<input
+																	type="text"
+																	placeholder="Search logo..."
+																	value={rowLogoSearches[ev.id] ?? ""}
+																	onChange={(e) =>
 																		setRowLogoSearches((prev) => ({
 																			...prev,
-																			[ev.id]: "",
+																			[ev.id]: e.target.value,
 																		}))
 																	}
-																	className="absolute right-1.5 top-0.5 text-[9px] text-slate-400 hover:text-slate-200"
-																>
-																	✕
-																</button>
-															)}
-														</div>
-														{matchingAssets.map((asset) => {
-															const isSelectedInRow = effectiveLogos.some(
-																(l) => l.asset_id === asset.id,
-															);
-															return (
-																<button
-																	key={asset.id}
-																	onClick={() => toggleAssetInEvent(ev, asset)}
-																	className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition ${
-																		isSelectedInRow
-																			? "bg-sky-500/20 border-sky-500 text-sky-300 font-semibold"
-																			: "bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-200"
-																	}`}
-																	title="Click to add/remove this logo for this tarpaulin variation"
-																>
-																	<CheckSquare
-																		className={`w-2.5 h-2.5 ${
+																	className="w-full pl-5 pr-4 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] outline-none focus:border-sky-500"
+																/>
+																{rowLogoSearches[ev.id] && (
+																	<button
+																		type="button"
+																		onClick={() =>
+																			setRowLogoSearches((prev) => ({
+																				...prev,
+																				[ev.id]: "",
+																			}))
+																		}
+																		className="absolute right-1.5 top-0.5 text-[9px] text-slate-400 hover:text-slate-200"
+																	>
+																		✕
+																	</button>
+																)}
+															</div>
+															{matchingAssets.map((asset) => {
+																const isSelectedInRow = effectiveLogos.some(
+																	(l) => l.asset_id === asset.id,
+																);
+																return (
+																	<button
+																		key={asset.id}
+																		onClick={() =>
+																			toggleAssetInEvent(ev, asset)
+																		}
+																		className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition ${
 																			isSelectedInRow
-																				? "text-sky-400"
-																				: "opacity-30"
+																				? "bg-sky-500/20 border-sky-500 text-sky-300 font-semibold"
+																				: "bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-200"
 																		}`}
-																	/>
-																	<span className="truncate max-w-[90px]">
-																		{asset.name}
-																	</span>
-																</button>
-															);
-														})}
-													</div>
-												);
-											})()}
+																		title="Click to add/remove this logo for this tarpaulin variation"
+																	>
+																		<CheckSquare
+																			className={`w-2.5 h-2.5 ${
+																				isSelectedInRow
+																					? "text-sky-400"
+																					: "opacity-30"
+																			}`}
+																		/>
+																		<span className="truncate max-w-[90px]">
+																			{asset.name}
+																		</span>
+																	</button>
+																);
+															})}
+														</div>
+													);
+												})()}
 										</div>
 									</div>
 								</div>

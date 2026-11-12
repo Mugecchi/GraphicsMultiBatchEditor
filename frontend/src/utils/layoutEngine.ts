@@ -105,35 +105,37 @@ export function computeLogoGroupLayout(
   const hSpacePct = Math.max(0.0, Math.min(30.0, groupProps.horizontal_spacing ?? 2.5));
   const vSpacePct = Math.max(0.0, Math.min(30.0, groupProps.vertical_spacing ?? 4.0));
   const maxPerRow = Math.max(1, Math.round(groupProps.max_logos_per_row ?? 6));
-  const hAlign = groupProps.alignment || 'center';
-  const vAlign = groupProps.vertical_alignment || 'middle';
-  const opticalBalance = Boolean(groupProps.optical_balance || arrangement === 'auto');
+  const isSmartAuto = arrangement === 'auto';
+  const hAlign = isSmartAuto ? 'center' : groupProps.alignment || 'center';
+  const vAlign = isSmartAuto ? 'middle' : groupProps.vertical_alignment || 'middle';
+  const opticalBalance = Boolean(groupProps.optical_balance || isSmartAuto);
 
   const gapX = innerW * (hSpacePct / 100.0);
 
   const getEffectiveAr = (item: LogoGroupItem): number => {
-    let ar = item.aspect_ratio || 1.0;
+    let ar = Number(item.aspect_ratio) || 0;
     if (ar <= 0.01) {
-      const nw = item.natural_width || 100;
-      const nh = item.natural_height || 100;
+      const nw = Number(item.natural_width) || 100;
+      const nh = Number(item.natural_height) || 100;
       ar = nw / Math.max(1.0, nh);
     }
-    return Math.max(0.1, Math.min(12.0, ar));
+    return Math.max(0.15, Math.min(8.0, ar));
   };
 
   const rows: LogoGroupItem[][] = [];
-  if (
-    arrangement === 'grid' ||
-    (count > maxPerRow &&
-      arrangement !== 'horizontal' &&
-      arrangement !== 'space-between' &&
-      arrangement !== 'space-around')
-  ) {
+  if (arrangement === 'grid') {
     const cols = Math.min(count, maxPerRow);
     for (let i = 0; i < count; i += cols) {
       rows.push(visibleLogos.slice(i, i + cols));
     }
+  } else if (
+    arrangement === 'horizontal' ||
+    arrangement === 'space-between' ||
+    arrangement === 'space-around'
+  ) {
+    rows.push(visibleLogos);
   } else {
+    // 'auto' (Smart Auto-Fit) or 'centered'
     const baseSingleH = innerH * (maxLogoHPct / 100.0);
     const permittedSingleW = innerW * (maxLogoWPct / 100.0);
     let estTotalW = 0.0;
@@ -143,23 +145,24 @@ export function computeLogoGroupLayout(
       optFactor = Math.max(0.55, Math.min(1.3, optFactor));
       const bh = baseSingleH * optFactor;
       const bw = Math.min(permittedSingleW, bh * ar);
-      estTotalW += bw * (item.scale_override || 1.0) * (item.width_scale || 1.0);
+      estTotalW += bw * (Number(item.scale_override) || 1.0) * (Number(item.width_scale) || 1.0);
     }
     estTotalW += gapX * Math.max(0, count - 1);
 
+    // Keep on a single centered row whenever count <= maxPerRow in a horizontal banner,
+    // only wrapping when count > maxPerRow or the container is tall/square and severely overcrowded.
+    const isTallOrSquareBox = innerW < innerH * 2.0;
     let shouldWrap = false;
     if (count > maxPerRow) {
       shouldWrap = true;
-    } else if (arrangement === 'auto' && count >= 4 && estTotalW > innerW * 1.35) {
-      shouldWrap = true;
-    } else if (count >= 5 && estTotalW > innerW * 2.35 && innerH >= 60.0) {
+    } else if (isSmartAuto && isTallOrSquareBox && count >= 4 && estTotalW > innerW * 1.6) {
       shouldWrap = true;
     }
 
     if (shouldWrap) {
-      let estRows = Math.max(2, Math.floor(estTotalW / Math.max(1.0, innerW * 1.15) + 0.999));
-      if (count > maxPerRow) {
-        estRows = Math.max(estRows, Math.floor((count + maxPerRow - 1) / maxPerRow));
+      let estRows = Math.max(2, Math.ceil(count / maxPerRow));
+      if (isSmartAuto && isTallOrSquareBox) {
+        estRows = Math.max(estRows, Math.floor(estTotalW / Math.max(1.0, innerW * 1.35) + 0.999));
       }
       estRows = Math.min(count, Math.max(2, Math.min(4, estRows)));
       const basePerRow = Math.floor(count / estRows);

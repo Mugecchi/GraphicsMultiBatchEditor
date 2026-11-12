@@ -112,28 +112,31 @@ def compute_logo_group_layout(
     h_space_pct = max(0.0, min(30.0, float(group_props.get("horizontal_spacing", 2.5))))
     v_space_pct = max(0.0, min(30.0, float(group_props.get("vertical_spacing", 4.0))))
     max_per_row = max(1, int(group_props.get("max_logos_per_row", 6)))
-    h_align = group_props.get("alignment", "center")
-    v_align = group_props.get("vertical_alignment", "middle")
-    optical_balance = bool(group_props.get("optical_balance", False) or arrangement == "auto")
+    is_smart_auto = arrangement == "auto"
+    h_align = "center" if is_smart_auto else (group_props.get("alignment") or "center")
+    v_align = "middle" if is_smart_auto else (group_props.get("vertical_alignment") or "middle")
+    optical_balance = bool(group_props.get("optical_balance", False) or is_smart_auto)
 
     gap_x = inner_w * (h_space_pct / 100.0)
 
     def _effective_ar(item: Dict[str, Any]) -> float:
-        ar = float(item.get("aspect_ratio") or 1.0)
+        ar = float(item.get("aspect_ratio") or 0.0)
         if ar <= 0.01:
             nw = float(item.get("natural_width") or 100)
             nh = float(item.get("natural_height") or 100)
             ar = nw / max(1.0, nh)
-        return max(0.1, min(12.0, ar))
+        return max(0.15, min(8.0, ar))
 
     # Determine rows based on arrangement mode + smart overflow wrapping
     rows: List[List[Dict[str, Any]]] = []
-    if arrangement == "grid" or (count > max_per_row and arrangement not in ("horizontal", "space-between", "space-around")):
+    if arrangement == "grid":
         cols = min(count, max_per_row)
         for i in range(0, count, cols):
             rows.append(visible_logos[i : i + cols])
+    elif arrangement in ("horizontal", "space-between", "space-around"):
+        rows = [visible_logos]
     else:
-        # Check if a single row would become unreadably small or overflow when box_h allows wrapping
+        # 'auto' (Smart Auto-Fit) or 'centered'
         base_single_h = inner_h * (max_logo_h_pct / 100.0)
         permitted_single_w = inner_w * (max_logo_w_pct / 100.0)
         est_total_w = 0.0
@@ -146,20 +149,20 @@ def compute_logo_group_layout(
             est_total_w += bw * float(item.get("scale_override") or 1.0) * float(item.get("width_scale") or 1.0)
         est_total_w += gap_x * max(0, count - 1)
 
-        # Auto-wrap into balanced rows if arrangement == 'auto' or if single row shrinks below 42% of target height
+        # Keep on a single centered row whenever count <= max_per_row in a horizontal banner,
+        # only wrapping when count > max_per_row or the container is tall/square and severely overcrowded.
+        is_tall_or_square_box = inner_w < inner_h * 2.0
         should_wrap = False
         if count > max_per_row:
             should_wrap = True
-        elif arrangement == "auto" and count >= 4 and est_total_w > inner_w * 1.35:
-            should_wrap = True
-        elif count >= 5 and est_total_w > inner_w * 2.35 and inner_h >= 60.0:
+        elif is_smart_auto and is_tall_or_square_box and count >= 4 and est_total_w > inner_w * 1.6:
             should_wrap = True
 
         if should_wrap:
             # Split into balanced rows (e.g. 7 logos -> 4 + 3 instead of 6 + 1)
-            est_rows = max(2, int((est_total_w / max(1.0, inner_w * 1.15)) + 0.999))
-            if count > max_per_row:
-                est_rows = max(est_rows, (count + max_per_row - 1) // max_per_row)
+            est_rows = max(2, (count + max_per_row - 1) // max_per_row)
+            if is_smart_auto and is_tall_or_square_box:
+                est_rows = max(est_rows, int((est_total_w / max(1.0, inner_w * 1.35)) + 0.999))
             est_rows = min(count, max(2, min(4, est_rows)))
             base_per_row = count // est_rows
             rem = count % est_rows

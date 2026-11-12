@@ -707,7 +707,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       z_index: maxZ + 1,
       logo_group_props: {
         logos: items,
-        arrangement: 'horizontal',
+        arrangement: 'auto',
+        optical_balance: true,
         max_logo_height: 85,
         max_logo_width: 40,
         horizontal_spacing: 2.5,

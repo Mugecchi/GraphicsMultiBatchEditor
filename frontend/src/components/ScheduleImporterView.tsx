@@ -29,6 +29,7 @@ export const ScheduleImporterView: React.FC = () => {
 
   const [scheduleText, setScheduleText] = useState<string>('');
   const [replaceExisting, setReplaceExisting] = useState<boolean>(true);
+  const [keepExistingLogos, setKeepExistingLogos] = useState<boolean>(true);
   const [autoCreateCanvasFields, setAutoCreateCanvasFields] = useState<boolean>(true);
   const [lastImportedCount, setLastImportedCount] = useState<number | null>(null);
 
@@ -72,7 +73,7 @@ export const ScheduleImporterView: React.FC = () => {
     setLastImportedCount(null);
   };
 
-  const handleApplyParsedSchedule = () => {
+  const handleApplyParsedSchedule = (forceKeepLogos?: boolean) => {
     if (previewDrafts.length === 0) {
       alert(
         'No structured schedule activities were detected. Paste a schedule with --- headers, Activity 1:, Lead Office:, Description:, Partners:, or Venue: lines.'
@@ -80,8 +81,14 @@ export const ScheduleImporterView: React.FC = () => {
       return;
     }
 
+    const shouldKeepLogos =
+      typeof forceKeepLogos === 'boolean' ? forceKeepLogos : keepExistingLogos;
     const startIndex = replaceExisting ? 0 : project.events.length;
-    const records = draftsToEventRecords(previewDrafts, startIndex);
+    const records = draftsToEventRecords(previewDrafts, {
+      startIndex,
+      existingEvents: project.events,
+      preserveLogos: replaceExisting && shouldKeepLogos,
+    });
 
     if (replaceExisting) {
       setAllEvents(records);
@@ -233,6 +240,20 @@ Venue: CITYWIDE`}
                   <span>Replace existing tarpaulin rows ({project.events.length})</span>
                 </label>
 
+                {replaceExisting && (
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
+                    <input
+                      type="checkbox"
+                      checked={keepExistingLogos}
+                      onChange={(e) => setKeepExistingLogos(e.target.checked)}
+                      className="accent-emerald-500"
+                    />
+                    <span>
+                      Keep existing row logos & custom sizes while replacing text contents
+                    </span>
+                  </label>
+                )}
+
                 <label className="flex items-center gap-2 cursor-pointer font-medium">
                   <input
                     type="checkbox"
@@ -251,16 +272,33 @@ Venue: CITYWIDE`}
                   </strong>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {replaceExisting && project.events.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={previewDrafts.length === 0}
+                      onClick={() => {
+                        setKeepExistingLogos(true);
+                        handleApplyParsedSchedule(true);
+                      }}
+                      className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold shadow flex items-center gap-1.5 transition"
+                      title="Update all titles, dates, venues, lead offices, and partners from the schedule while keeping every row's configured logos intact"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Replace Contents Only (Keep Logos)
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={previewDrafts.length === 0}
-                    onClick={handleApplyParsedSchedule}
+                    onClick={() => handleApplyParsedSchedule()}
                     className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-bold shadow flex items-center gap-1.5 transition"
                   >
                     <FilePlus2 className="w-4 h-4" />
                     {replaceExisting
-                      ? `Parse & Replace with ${previewDrafts.length} Tarpaulin Rows`
+                      ? keepExistingLogos
+                        ? `Parse & Replace (${previewDrafts.length} Rows • Keep Logos)`
+                        : `Parse & Replace All (${previewDrafts.length} Rows)`
                       : `Parse & Append ${previewDrafts.length} Tarpaulin Rows`}
                   </button>
                 </div>
