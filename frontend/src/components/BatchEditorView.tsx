@@ -57,6 +57,7 @@ export const BatchEditorView: React.FC = () => {
 		renameLogoAsset,
 		deleteLogoAsset,
 		updateElementNested,
+		setElementOverride,
 	} = useStudioStore();
 
 	const [renamingPoolAssetId, setRenamingPoolAssetId] = useState<string | null>(
@@ -136,11 +137,51 @@ export const BatchEditorView: React.FC = () => {
 
 	// Find all Logo Group elements and allow switching which Logo Group is being edited in Shared Logos
 	const allLogoGroups = project.elements.filter((e) => e.type === "logo_group");
+	const primaryLogoGroupId = allLogoGroups[0]?.id;
 	const sharedLogoGroup =
 		allLogoGroups.find((e) => e.id === activeBatchLogoGroupId) ||
 		allLogoGroups[0] ||
 		undefined;
 	const sharedGroupLogos = sharedLogoGroup?.logo_group_props?.logos || [];
+
+	const isGroupPrimaryOrBound = (groupEl = sharedLogoGroup) => {
+		if (!groupEl) return true;
+		const flag = groupEl.logo_group_props?.bind_to_event_logos;
+		if (flag !== undefined && flag !== null) return flag;
+		return groupEl.id === primaryLogoGroupId;
+	};
+
+	const getRowCustomLogosForGroup = (
+		ev: EventRecord,
+		groupEl = sharedLogoGroup,
+	): LogoGroupItem[] => {
+		if (!groupEl) return ev.logos || [];
+		const ovLogos = ev.element_overrides?.[groupEl.id]?.logos;
+		if (ovLogos && ovLogos.length > 0) return ovLogos;
+		if (isGroupPrimaryOrBound(groupEl)) return ev.logos || [];
+		return [];
+	};
+
+	const setRowCustomLogosForGroup = (
+		ev: EventRecord,
+		logos: LogoGroupItem[],
+		groupEl = sharedLogoGroup,
+	) => {
+		if (!groupEl) {
+			updateEvent(ev.id, { logos });
+			return;
+		}
+		if (
+			isGroupPrimaryOrBound(groupEl) &&
+			!(ev.element_overrides?.[groupEl.id]?.logos?.length)
+		) {
+			updateEvent(ev.id, { logos });
+		} else {
+			setElementOverride(ev.id, groupEl.id, {
+				logos: logos.length > 0 ? logos : null,
+			});
+		}
+	};
 
 	const toggleAssetInSharedGroup = (asset: LogoAsset) => {
 		if (!sharedLogoGroup) {
@@ -285,15 +326,30 @@ export const BatchEditorView: React.FC = () => {
 		setUploadingForEventId(eventId);
 		try {
 			const res = await api.uploadLogos(project.id, Array.from(fileList));
-			// Append newly uploaded logos directly to this event's logos array
 			const targetEv = res.project.events.find((ev) => ev.id === eventId);
-			const existingLogos = targetEv?.logos || [];
 			const addedItems = res.uploaded.map(assetToGroupItem);
-			const updatedEvents = res.project.events.map((ev) =>
-				ev.id === eventId
-					? { ...ev, logos: [...existingLogos, ...addedItems] }
-					: ev,
-			);
+			const isPrimaryTarget = isGroupPrimaryOrBound(sharedLogoGroup);
+			const targetGroupId = sharedLogoGroup?.id;
+
+			const updatedEvents = res.project.events.map((ev) => {
+				if (ev.id !== eventId) return ev;
+				if (!targetGroupId || isPrimaryTarget) {
+					const existingLogos = targetEv?.logos || [];
+					return { ...ev, logos: [...existingLogos, ...addedItems] };
+				}
+				const existingOv = ev.element_overrides?.[targetGroupId] || {};
+				const existingGroupLogos = existingOv.logos || [];
+				return {
+					...ev,
+					element_overrides: {
+						...(ev.element_overrides || {}),
+						[targetGroupId]: {
+							...existingOv,
+							logos: [...existingGroupLogos, ...addedItems],
+						},
+					},
+				};
+			});
 			const saved = await api.updateProject(project.id, {
 				assets: res.project.assets,
 				events: updatedEvents,
@@ -308,19 +364,24 @@ export const BatchEditorView: React.FC = () => {
 	};
 
 	const toggleAssetInEvent = (ev: EventRecord, asset: LogoAsset) => {
-		const hasCustom = Boolean(ev.logos && ev.logos.length > 0);
+		const currentRowLogos = getRowCustomLogosForGroup(ev, sharedLogoGroup);
+		const hasCustom = currentRowLogos.length > 0;
 		const baseList: LogoGroupItem[] = hasCustom
-			? [...(ev.logos || [])]
+			? [...currentRowLogos]
 			: JSON.parse(JSON.stringify(sharedGroupLogos));
 		const exists = baseList.some((l) => l.asset_id === asset.id);
 		if (exists) {
-			updateEvent(ev.id, {
-				logos: baseList.filter((l) => l.asset_id !== asset.id),
-			});
+			setRowCustomLogosForGroup(
+				ev,
+				baseList.filter((l) => l.asset_id !== asset.id),
+				sharedLogoGroup,
+			);
 		} else {
-			updateEvent(ev.id, {
-				logos: [...baseList, assetToGroupItem(asset)],
-			});
+			setRowCustomLogosForGroup(
+				ev,
+				[...baseList, assetToGroupItem(asset)],
+				sharedLogoGroup,
+			);
 		}
 	};
 
@@ -329,20 +390,23 @@ export const BatchEditorView: React.FC = () => {
 		logoItemId: string,
 		dir: "left" | "right",
 	) => {
-		const list = [...(ev.logos || [])];
+		const list = [...getRowCustomLogosForGroup(ev, sharedLogoGroup)];
 		const idx = list.findIndex((l) => l.id === logoItemId);
 		if (idx === -1) return;
 		const targetIdx = dir === "left" ? idx - 1 : idx + 1;
 		if (targetIdx < 0 || targetIdx >= list.length) return;
 		const [moved] = list.splice(idx, 1);
 		list.splice(targetIdx, 0, moved);
-		updateEvent(ev.id, { logos: list });
+		setRowCustomLogosForGroup(ev, list, sharedLogoGroup);
 	};
 
 	const removeEventLogo = (ev: EventRecord, logoItemId: string) => {
-		updateEvent(ev.id, {
-			logos: (ev.logos || []).filter((l) => l.id !== logoItemId),
-		});
+		const list = getRowCustomLogosForGroup(ev, sharedLogoGroup);
+		setRowCustomLogosForGroup(
+			ev,
+			list.filter((l) => l.id !== logoItemId),
+			sharedLogoGroup,
+		);
 	};
 
 	const applyFirstRowSecondaryFieldsToAll = () => {
@@ -563,7 +627,8 @@ export const BatchEditorView: React.FC = () => {
 															: `${lgEl.name} — Independent logo group on canvas`
 													}
 												>
-													{lgEl.name} ({lgEl.logo_group_props?.logos.length || 0})
+													{lgEl.name} (
+													{lgEl.logo_group_props?.logos.length || 0})
 												</button>
 											);
 										})}
@@ -574,7 +639,9 @@ export const BatchEditorView: React.FC = () => {
 											addLogoGroupElement([]);
 											const newest = useStudioStore
 												.getState()
-												.project?.elements.filter((e) => e.type === "logo_group")
+												.project?.elements.filter(
+													(e) => e.type === "logo_group",
+												)
 												.slice(-1)[0];
 											if (newest) {
 												setActiveBatchLogoGroupId(newest.id);
@@ -590,7 +657,8 @@ export const BatchEditorView: React.FC = () => {
 
 								<div className="flex items-center justify-between">
 									<span className="text-[11px] font-bold text-sky-400">
-										{sharedLogoGroup?.name || "Logo Group"} ({sharedGroupLogos.length} Logos)
+										{sharedLogoGroup?.name || "Logo Group"} (
+										{sharedGroupLogos.length} Logos)
 									</span>
 									<div className="flex items-center gap-1.5">
 										{project.assets.length > 0 && (
@@ -1071,21 +1139,66 @@ export const BatchEditorView: React.FC = () => {
 
 				{/* Batch Rows List */}
 				<div className="space-y-3">
-					<div className="flex items-center justify-between">
-						<div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-							Tarpaulin Variations ({project.events.length} Total — Shared
-							Layout)
+					<div className="flex flex-wrap items-center justify-between gap-2">
+						<div className="flex flex-wrap items-center gap-2">
+							<div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+								Tarpaulin Variations ({project.events.length} Total)
+							</div>
+							{allLogoGroups.length > 0 && (
+								<div className="flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-800">
+									<span className="text-[10px] font-semibold text-slate-400 px-1.5">
+										Editing Logo Group:
+									</span>
+									{allLogoGroups.map((lgEl) => {
+										const isSelectedGrp = sharedLogoGroup?.id === lgEl.id;
+										return (
+											<button
+												key={lgEl.id}
+												type="button"
+												onClick={() => setActiveBatchLogoGroupId(lgEl.id)}
+												className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+													isSelectedGrp
+														? "bg-sky-500 text-white shadow-sm"
+														: "bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-200"
+												}`}
+											>
+												{lgEl.name} ({lgEl.logo_group_props?.logos.length || 0})
+											</button>
+										);
+									})}
+									<button
+										type="button"
+										onClick={() => {
+											addLogoGroupElement([]);
+											const newest = useStudioStore
+												.getState()
+												.project?.elements.filter((e) => e.type === "logo_group")
+												.slice(-1)[0];
+											if (newest) {
+												setActiveBatchLogoGroupId(newest.id);
+											}
+										}}
+										className="px-2 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 text-[10px] font-bold flex items-center gap-1 transition"
+										title="Add another Logo Group on the template with its own separate set of logos"
+									>
+										<Plus className="w-2.5 h-2.5" />
+										+ Add Logo Group
+									</button>
+								</div>
+							)}
 						</div>
 						<div className="text-[11px] text-slate-400">
-							Tip: If a row has custom logos selected, it uses those logos; if
-							left empty, it falls back to the shared Logo Group (
-							{sharedGroupLogos.length} default logos).
+							Editing logos for{" "}
+							<strong className="text-sky-400">
+								{sharedLogoGroup?.name || "Logo Group"}
+							</strong>{" "}
+							({sharedGroupLogos.length} shared logos).
 						</div>
 					</div>
 
 					<div className="space-y-3">
 						{project.events.map((ev, idx) => {
-							const rowLogos = ev.logos || [];
+							const rowLogos = getRowCustomLogosForGroup(ev, sharedLogoGroup);
 							const hasCustomLogos = rowLogos.length > 0;
 							const effectiveLogos = hasCustomLogos
 								? rowLogos
@@ -1477,9 +1590,9 @@ export const BatchEditorView: React.FC = () => {
 										{/* Column 3: Per-Tarpaulin Logos Assignment & Ordering (6 cols) */}
 										<div className="lg:col-span-6 space-y-2.5">
 											<div className="flex flex-wrap items-center justify-between gap-2">
-												<div className="flex items-center gap-2">
+												<div className="flex flex-wrap items-center gap-1.5">
 													<span className="text-[11px] font-semibold text-slate-400">
-														Logos for Tarpaulin #{idx + 1}:
+														Logos for #{idx + 1} ({sharedLogoGroup?.name || "Logo Group"}):
 													</span>
 													<span
 														className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
@@ -1490,22 +1603,71 @@ export const BatchEditorView: React.FC = () => {
 													>
 														{hasCustomLogos
 															? `${rowLogos.length} Custom Logo(s)`
-															: `Using Shared (${sharedGroupLogos.length} Logos)`}
+															: `Using Shared ${sharedLogoGroup?.name || "Group"} (${sharedGroupLogos.length})`}
 													</span>
+													<div className="flex flex-wrap items-center gap-1 ml-1">
+														{allLogoGroups.length > 1 &&
+															allLogoGroups.map((lgEl) => {
+																const activeGrp = sharedLogoGroup?.id === lgEl.id;
+																const customCnt = getRowCustomLogosForGroup(
+																	ev,
+																	lgEl,
+																).length;
+																const sharedCnt =
+																	lgEl.logo_group_props?.logos.length || 0;
+																return (
+																	<button
+																		key={lgEl.id}
+																		type="button"
+																		onClick={() =>
+																			setActiveBatchLogoGroupId(lgEl.id)
+																		}
+																		className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition ${
+																			activeGrp
+																				? "bg-sky-500 text-white"
+																				: "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700"
+																		}`}
+																		title={`Switch to edit ${lgEl.name} on this row`}
+																	>
+																		{lgEl.name} ({customCnt || sharedCnt})
+																	</button>
+																);
+															})}
+														<button
+															type="button"
+															onClick={() => {
+																addLogoGroupElement([]);
+																const newest = useStudioStore
+																	.getState()
+																	.project?.elements.filter(
+																		(e) => e.type === "logo_group",
+																	)
+																	.slice(-1)[0];
+																if (newest) {
+																	setActiveBatchLogoGroupId(newest.id);
+																}
+															}}
+															className="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 text-[9px] font-bold flex items-center gap-0.5 transition"
+															title="Add another Logo Group on the template with its own separate set of logos"
+														>
+															<Plus className="w-2.5 h-2.5" />
+															New Logo Group
+														</button>
+													</div>
 												</div>
 
 												<div className="flex items-center gap-1.5">
 													{!hasCustomLogos && sharedGroupLogos.length > 0 && (
 														<button
 															onClick={() =>
-																updateEvent(ev.id, {
-																	logos: JSON.parse(
-																		JSON.stringify(sharedGroupLogos),
-																	),
-																})
+																setRowCustomLogosForGroup(
+																	ev,
+																	JSON.parse(JSON.stringify(sharedGroupLogos)),
+																	sharedLogoGroup,
+																)
 															}
 															className="text-[10px] px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium"
-															title="Copy the shared logos into this row so you can customize them"
+															title="Copy the shared logos of this Logo Group into this row so you can customize them"
 														>
 															Customize from Shared
 														</button>
@@ -1513,9 +1675,15 @@ export const BatchEditorView: React.FC = () => {
 
 													{hasCustomLogos && (
 														<button
-															onClick={() => updateEvent(ev.id, { logos: [] })}
+															onClick={() =>
+																setRowCustomLogosForGroup(
+																	ev,
+																	[],
+																	sharedLogoGroup,
+																)
+															}
 															className="text-[10px] px-2 py-1 rounded bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 font-medium"
-															title="Clear custom logos and revert to shared template logos"
+															title="Clear custom logos and revert to shared Logo Group logos"
 														>
 															Reset to Shared
 														</button>
@@ -1559,7 +1727,27 @@ export const BatchEditorView: React.FC = () => {
 															patch: Partial<LogoGroupItem>,
 														) => {
 															if (hasCustomLogos) {
-																updateEventLogo(ev.id, lg.id, patch, true);
+																if (
+																	isGroupPrimaryOrBound(sharedLogoGroup) &&
+																	!(
+																		ev.element_overrides?.[
+																			sharedLogoGroup?.id || ""
+																		]?.logos?.length
+																	)
+																) {
+																	updateEventLogo(ev.id, lg.id, patch, true);
+																} else {
+																	const nextList = rowLogos.map((item) =>
+																		item.id === lg.id
+																			? { ...item, ...patch }
+																			: item,
+																	);
+																	setRowCustomLogosForGroup(
+																		ev,
+																		nextList,
+																		sharedLogoGroup,
+																	);
+																}
 															} else if (sharedLogoGroup) {
 																updateLogoInGroup(
 																	sharedLogoGroup.id,
@@ -1570,8 +1758,8 @@ export const BatchEditorView: React.FC = () => {
 															}
 														};
 														const rowScope = hasCustomLogos
-															? ev.id
-															: `row_shared_${ev.id}`;
+															? `${ev.id}_${sharedLogoGroup?.id || "primary"}`
+															: `row_shared_${ev.id}_${sharedLogoGroup?.id || "primary"}`;
 														const isRowDragTarget =
 															draggedLogoInfo?.scope === rowScope &&
 															dragOverLogoId === lg.id &&
@@ -1600,11 +1788,47 @@ export const BatchEditorView: React.FC = () => {
 																		draggedLogoInfo.itemId !== lg.id
 																	) {
 																		if (hasCustomLogos) {
-																			moveEventLogoToIndex(
-																				ev.id,
-																				draggedLogoInfo.itemId,
-																				lg.id,
-																			);
+																			if (
+																				isGroupPrimaryOrBound(
+																					sharedLogoGroup,
+																				) &&
+																				!(
+																					ev.element_overrides?.[
+																						sharedLogoGroup?.id || ""
+																					]?.logos?.length
+																				)
+																			) {
+																				moveEventLogoToIndex(
+																					ev.id,
+																					draggedLogoInfo.itemId,
+																					lg.id,
+																				);
+																			} else {
+																				const list = [...rowLogos];
+																				const fromIdx = list.findIndex(
+																					(i) =>
+																						i.id === draggedLogoInfo.itemId,
+																				);
+																				const toIdx = list.findIndex(
+																					(i) => i.id === lg.id,
+																				);
+																				if (
+																					fromIdx !== -1 &&
+																					toIdx !== -1 &&
+																					fromIdx !== toIdx
+																				) {
+																					const [moved] = list.splice(
+																						fromIdx,
+																						1,
+																					);
+																					list.splice(toIdx, 0, moved);
+																					setRowCustomLogosForGroup(
+																						ev,
+																						list,
+																						sharedLogoGroup,
+																					);
+																				}
+																			}
 																		} else if (sharedLogoGroup) {
 																			moveLogoInGroupToIndex(
 																				sharedLogoGroup.id,
@@ -1789,11 +2013,11 @@ export const BatchEditorView: React.FC = () => {
 																				const forked = sharedGroupLogos.filter(
 																					(item) => item.id !== lg.id,
 																				);
-																				updateEvent(ev.id, {
-																					logos: JSON.parse(
-																						JSON.stringify(forked),
-																					),
-																				});
+																				setRowCustomLogosForGroup(
+																					ev,
+																					JSON.parse(JSON.stringify(forked)),
+																					sharedLogoGroup,
+																				);
 																			}
 																		}}
 																		className="p-0.5 rounded hover:bg-rose-500/20 text-rose-400"
