@@ -88,6 +88,8 @@ export const BatchEditorView: React.FC = () => {
 		itemId: string;
 	} | null>(null);
 	const [dragOverLogoId, setDragOverLogoId] = useState<string | null>(null);
+	const [activeBatchLogoGroupId, setActiveBatchLogoGroupId] =
+		useState<string>("");
 
 	if (!project) return null;
 
@@ -132,8 +134,12 @@ export const BatchEditorView: React.FC = () => {
 		updateEvent(ev.id, { custom_fields: nextCustom });
 	};
 
-	// Find shared Logo Group element so users can see/copy shared logos if desired
-	const sharedLogoGroup = project.elements.find((e) => e.type === "logo_group");
+	// Find all Logo Group elements and allow switching which Logo Group is being edited in Shared Logos
+	const allLogoGroups = project.elements.filter((e) => e.type === "logo_group");
+	const sharedLogoGroup =
+		allLogoGroups.find((e) => e.id === activeBatchLogoGroupId) ||
+		allLogoGroups[0] ||
+		undefined;
 	const sharedGroupLogos = sharedLogoGroup?.logo_group_props?.logos || [];
 
 	const toggleAssetInSharedGroup = (asset: LogoAsset) => {
@@ -470,7 +476,9 @@ export const BatchEditorView: React.FC = () => {
 									<input
 										type="checkbox"
 										checked={replaceExistingOnPaste}
-										onChange={(e) => setReplaceExistingOnPaste(e.target.checked)}
+										onChange={(e) =>
+											setReplaceExistingOnPaste(e.target.checked)
+										}
 									/>
 									<span>Replace existing rows instead of appending</span>
 								</label>
@@ -533,12 +541,56 @@ export const BatchEditorView: React.FC = () => {
 								</label>
 							</div>
 
-							{/* Shared Default Logos Editor (Applies to all rows using Shared) */}
+							{/* Shared Default Logos Editor (Supports Multiple Logo Groups) */}
 							<div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-2">
+								<div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
+									<div className="flex flex-wrap items-center gap-1">
+										{allLogoGroups.map((lgEl, idx) => {
+											const isSelectedGrp = sharedLogoGroup?.id === lgEl.id;
+											return (
+												<button
+													key={lgEl.id}
+													type="button"
+													onClick={() => setActiveBatchLogoGroupId(lgEl.id)}
+													className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+														isSelectedGrp
+															? "bg-sky-500 text-white shadow-sm"
+															: "bg-slate-200 dark:bg-slate-800 text-slate-400 hover:text-slate-200"
+													}`}
+													title={
+														idx === 0
+															? `${lgEl.name} — Primary group (synced with per-row logos unless independent)`
+															: `${lgEl.name} — Independent logo group on canvas`
+													}
+												>
+													{lgEl.name} ({lgEl.logo_group_props?.logos.length || 0})
+												</button>
+											);
+										})}
+									</div>
+									<button
+										type="button"
+										onClick={() => {
+											addLogoGroupElement([]);
+											const newest = useStudioStore
+												.getState()
+												.project?.elements.filter((e) => e.type === "logo_group")
+												.slice(-1)[0];
+											if (newest) {
+												setActiveBatchLogoGroupId(newest.id);
+											}
+										}}
+										className="px-2 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 text-[10px] font-bold flex items-center gap-1 transition"
+										title="Add another independent Logo Group with its own separate set of logos"
+									>
+										<Plus className="w-2.5 h-2.5" />
+										New Logo Group
+									</button>
+								</div>
+
 								<div className="flex items-center justify-between">
 									<span className="text-[11px] font-bold text-sky-400">
-										Active Shared Logos ({sharedGroupLogos.length}) — Default
-										for All Rows
+										{sharedLogoGroup?.name || "Logo Group"} ({sharedGroupLogos.length} Logos)
 									</span>
 									<div className="flex items-center gap-1.5">
 										{project.assets.length > 0 && (

@@ -17,10 +17,12 @@ import {
   Crop,
   Eye,
   EyeOff,
+  FolderPlus,
   GripVertical,
   Group,
   Italic,
   Lock,
+  Plus,
   RotateCcw,
   Search,
   Trash2,
@@ -29,13 +31,16 @@ import {
   Unlock,
 } from 'lucide-react';
 import { ensureFontFaceLoaded, useStudioStore } from '../store/useStudioStore';
-import { ArrangementMode, TextStyle } from '../types/studio';
+import { ArrangementMode, LogoAsset, TextStyle } from '../types/studio';
 
 export const RightSidebar: React.FC = () => {
   const {
     project,
     selectedElementIds,
     availableFonts,
+    selectElement,
+    addLogoGroupElement,
+    addAssetsToLogoGroup,
     updateElement,
     updateElementNested,
     deleteSelectedElements,
@@ -63,6 +68,7 @@ export const RightSidebar: React.FC = () => {
   const [dragOverSidebarLogoId, setDragOverSidebarLogoId] = useState<string | null>(null);
   const [canDragLogoId, setCanDragLogoId] = useState<string | null>(null);
   const [sidebarLogoSearch, setSidebarLogoSearch] = useState('');
+  const [poolPickerSearch, setPoolPickerSearch] = useState('');
 
   if (!project) return null;
 
@@ -752,11 +758,128 @@ export const RightSidebar: React.FC = () => {
           {/* SECTION 4: DYNAMIC LOGO GROUP INSPECTOR */}
           {el.type === 'logo_group' && el.logo_group_props && (() => {
             const gp = el.logo_group_props;
+            const allLogoGroups = project.elements.filter((e) => e.type === 'logo_group');
+            const primaryLogoGroupId = allLogoGroups[0]?.id;
+            const isBoundToEventLogos =
+              gp.bind_to_event_logos !== undefined && gp.bind_to_event_logos !== null
+                ? gp.bind_to_event_logos
+                : el.id === primaryLogoGroupId;
+            const isEditingEventLogos = Boolean(
+              isBoundToEventLogos && activeEvent?.logos && activeEvent.logos.length > 0
+            );
+            const activeLogosList = isEditingEventLogos ? activeEvent!.logos : gp.logos;
+
+            const toggleAssetInSelectedGroup = (asset: LogoAsset) => {
+              if (isEditingEventLogos && activeEvent) {
+                const exists = activeEvent.logos.find((l) => l.asset_id === asset.id);
+                if (exists) {
+                  useStudioStore.getState().updateEvent(activeEvent.id, {
+                    logos: activeEvent.logos.filter((l) => l.asset_id !== asset.id),
+                  });
+                } else {
+                  useStudioStore.getState().updateEvent(activeEvent.id, {
+                    logos: [
+                      ...activeEvent.logos,
+                      {
+                        id: `evlg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+                        asset_id: asset.id,
+                        name: asset.name,
+                        url: asset.url,
+                        relative_path: asset.relative_path,
+                        natural_width: asset.natural_width,
+                        natural_height: asset.natural_height,
+                        aspect_ratio: asset.aspect_ratio,
+                        visible: true,
+                      },
+                    ],
+                  });
+                }
+              } else {
+                const existing = gp.logos.find((l) => l.asset_id === asset.id);
+                if (existing) {
+                  removeLogoFromGroup(el.id, existing.id);
+                } else {
+                  addAssetsToLogoGroup(el.id, [asset]);
+                }
+              }
+            };
+
             return (
               <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <div className="font-bold uppercase tracking-wider text-sky-400 text-[11px]">
-                  Auto-Layout Logo Group ({gp.logos.length} Logos)
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-bold uppercase tracking-wider text-sky-400 text-[11px]">
+                    {el.name} ({activeLogosList.length} Logos)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addLogoGroupElement([])}
+                    className="px-2 py-1 rounded-md bg-sky-500 hover:bg-sky-400 text-white text-[10px] font-bold flex items-center gap-1 shadow-sm transition shrink-0"
+                    title="Create a new independent Logo Group on the canvas with its own separate logos"
+                  >
+                    <FolderPlus className="w-3 h-3" />
+                    + New Logo Group
+                  </button>
                 </div>
+
+                {/* Switcher when multiple Logo Groups exist on the template */}
+                {allLogoGroups.length > 1 && (
+                  <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                    <div className="text-[10px] font-semibold text-slate-400">
+                      Logo Groups on Canvas ({allLogoGroups.length}) — Click to switch:
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {allLogoGroups.map((lgEl) => {
+                        const isCurr = lgEl.id === el.id;
+                        return (
+                          <button
+                            key={lgEl.id}
+                            type="button"
+                            onClick={() => selectElement(lgEl.id)}
+                            className={`px-2 py-1 rounded text-[10px] font-semibold transition flex items-center gap-1 ${
+                              isCurr
+                                ? 'bg-sky-500 text-white shadow-sm'
+                                : 'bg-white dark:bg-slate-900 text-slate-300 border border-slate-700 hover:border-sky-500/50'
+                            }`}
+                          >
+                            <span>{lgEl.name}</span>
+                            <span className="opacity-75 font-mono">
+                              ({lgEl.logo_group_props?.logos.length || 0})
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Independent vs Batch Row Synced Toggle */}
+                <label className="flex items-center justify-between gap-2 p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/25 cursor-pointer text-[11px]">
+                  <div>
+                    <div className="font-semibold text-indigo-300">
+                      Independent Logo Set (Own Logos)
+                    </div>
+                    <div className="text-[9px] text-slate-400">
+                      {!isBoundToEventLogos
+                        ? 'This group keeps its own separate logos across all rows'
+                        : 'Synced with per-row Batch Editor logos'}
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={!isBoundToEventLogos}
+                    onChange={(e) =>
+                      updateElementNested(
+                        el.id,
+                        (d) => {
+                          d.logo_group_props!.bind_to_event_logos = !e.target.checked;
+                          return d;
+                        },
+                        true
+                      )
+                    }
+                    className="accent-indigo-500 w-4 h-4 shrink-0"
+                  />
+                </label>
 
                 <div>
                   <label className="block text-[10px] text-slate-400 mb-1">
@@ -956,6 +1079,110 @@ export const RightSidebar: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Quick Pool Picker: Toggle any uploaded logo in/out of this specific Logo Group */}
+                {project.assets.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-slate-100/70 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                        Select Logos for "{el.name}" ({activeLogosList.length}/{project.assets.length})
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => addAssetsToLogoGroup(el.id, project.assets)}
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 font-semibold"
+                          title="Add all uploaded logos to this group"
+                        >
+                          + All
+                        </button>
+                        {activeLogosList.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isEditingEventLogos && activeEvent) {
+                                useStudioStore.getState().updateEvent(activeEvent.id, { logos: [] });
+                              } else {
+                                updateElementNested(
+                                  el.id,
+                                  (d) => {
+                                    d.logo_group_props!.logos = [];
+                                    return d;
+                                  },
+                                  true
+                                );
+                              }
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 font-semibold"
+                            title="Clear all logos from this group"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {project.assets.length > 4 && (
+                      <div className="relative">
+                        <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1.5" />
+                        <input
+                          type="text"
+                          placeholder="Search pool to toggle..."
+                          value={poolPickerSearch}
+                          onChange={(e) => setPoolPickerSearch(e.target.value)}
+                          className="w-full pl-6 pr-5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[10px] outline-none focus:border-sky-500"
+                        />
+                        {poolPickerSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setPoolPickerSearch('')}
+                            className="absolute right-1.5 top-0.5 text-[10px] text-slate-400 hover:text-slate-200"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pr-0.5">
+                      {project.assets
+                        .filter((a) => {
+                          const q = poolPickerSearch.trim().toLowerCase();
+                          return !q || a.name.toLowerCase().includes(q);
+                        })
+                        .map((asset) => {
+                          const isIncluded = activeLogosList.some((l) => l.asset_id === asset.id);
+                          return (
+                            <button
+                              key={asset.id}
+                              type="button"
+                              onClick={() => toggleAssetInSelectedGroup(asset)}
+                              className={`flex items-center gap-1 px-1.5 py-1 rounded border text-[10px] transition ${
+                                isIncluded
+                                  ? 'bg-sky-500/20 border-sky-500 text-sky-300 font-semibold'
+                                  : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400 opacity-70 hover:opacity-100'
+                              }`}
+                              title={
+                                isIncluded
+                                  ? `Click to remove "${asset.name}" from ${el.name}`
+                                  : `Click to add "${asset.name}" to ${el.name}`
+                              }
+                            >
+                              <img
+                                src={asset.url}
+                                alt={asset.name}
+                                className="w-4 h-4 object-contain bg-checkerboard rounded"
+                              />
+                              <span className="max-w-[72px] truncate">{asset.name}</span>
+                              <span className="text-[9px] font-bold">
+                                {isIncluded ? '✓' : '+'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Ordered Logos Inside Group + Per-Logo Size/Width/Height Controls */}
                 <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                   <div className="flex items-center justify-between gap-1">
@@ -974,11 +1201,15 @@ export const RightSidebar: React.FC = () => {
                           Trim All Spaces
                         </button>
                       )}
-                      {activeEvent?.logos && activeEvent.logos.length > 0 && (
+                      {isEditingEventLogos ? (
                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 font-semibold">
                           Custom Row
                         </span>
-                      )}
+                      ) : !isBoundToEventLogos ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-semibold">
+                          Independent Group
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-400 leading-tight">
@@ -986,13 +1217,6 @@ export const RightSidebar: React.FC = () => {
                     <strong>Circle Fit</strong> if a round logo has an empty square canvas around it.
                   </p>
                   {(() => {
-                    const isEditingEventLogos = Boolean(
-                      activeEvent?.logos && activeEvent.logos.length > 0
-                    );
-                    const activeLogosList = isEditingEventLogos
-                      ? activeEvent!.logos
-                      : gp.logos;
-
                     const handlePatchLogoItem = (
                       itemId: string,
                       patch: Partial<(typeof activeLogosList)[0]>
@@ -1006,8 +1230,8 @@ export const RightSidebar: React.FC = () => {
 
                     if (activeLogosList.length === 0) {
                       return (
-                        <div className="p-3 rounded border border-dashed border-slate-700 text-center text-[11px] text-slate-500">
-                          Open the "Logos" tab on the left to upload or add logos to this group.
+                        <div className="p-3 rounded border border-dashed border-slate-700 text-center text-[11px] text-slate-400">
+                          This Logo Group is empty. Click any logo in <strong>Select Logos for "{el.name}"</strong> above (or in the Logos tab on the left) to add logos to this group!
                         </div>
                       );
                     }

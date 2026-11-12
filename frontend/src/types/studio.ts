@@ -87,6 +87,7 @@ export interface LogoGroupProps {
   margin: number;
   crop_transparent?: boolean;
   optical_balance?: boolean;
+  bind_to_event_logos?: boolean | null;
 }
 
 export interface CanvasElement {
@@ -118,6 +119,7 @@ export interface ElementOverride {
   height?: number | null;
   visible?: boolean | null;
   logo_ids?: string[] | null;
+  logos?: LogoGroupItem[] | null;
   arrangement?: ArrangementMode | null;
 }
 

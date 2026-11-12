@@ -619,6 +619,7 @@ def render_logo_group_element(
     base_img: Image.Image,
     el: Dict[str, Any],
     event: Optional[Dict[str, Any]],
+    is_primary_logo_group: bool = True,
 ) -> None:
     gp = dict(el.get("logo_group_props") or {})
     override = (event.get("element_overrides") or {}).get(el["id"], {}) if event else {}
@@ -635,10 +636,16 @@ def render_logo_group_element(
     box_h = max(4.0, (box_h_pct / 100.0) * canvas_h)
 
     logos = list(gp.get("logos") or [])
-    # If event defines its own logos or override specifies logo_ids
-    if event and event.get("logos"):
-        # Merge or use event-specific logos if present
+    bind_flag = gp.get("bind_to_event_logos")
+    is_bound_to_event = bind_flag if bind_flag is not None else is_primary_logo_group
+
+    # 1. Per-element custom logos override for this specific logo_group & event
+    if override.get("logos") and len(override["logos"]) > 0:
+        logos = list(override["logos"])
+    # 2. If bound to event.logos (default for primary logo group), use event-specific logos if present
+    elif is_bound_to_event and event and event.get("logos"):
         logos = list(event["logos"])
+
     if override.get("logo_ids") is not None:
         id_set = set(override["logo_ids"])
         logos = [lg for lg in logos if lg.get("id") in id_set or lg.get("asset_id") in id_set]
@@ -710,8 +717,16 @@ def render_tarpaulin_image(
         if target_event is None:
             target_event = events[0]
 
+    # Identify primary (first) logo_group in the project's elements list
+    raw_elements = list(project.get("elements") or [])
+    primary_logo_group_id: Optional[str] = None
+    for raw_el in raw_elements:
+        if raw_el.get("type") == "logo_group":
+            primary_logo_group_id = raw_el.get("id")
+            break
+
     # Sort elements by z_index ascending so higher layers composite on top
-    elements = list(project.get("elements") or [])
+    elements = list(raw_elements)
     elements.sort(key=lambda e: int(e.get("z_index", 0)))
 
     for el in elements:
@@ -732,7 +747,12 @@ def render_tarpaulin_image(
         elif el_type == "logo":
             render_single_logo_element(base_img, el, target_event)
         elif el_type == "logo_group":
-            render_logo_group_element(base_img, el, target_event)
+            render_logo_group_element(
+                base_img,
+                el,
+                target_event,
+                is_primary_logo_group=(el_id == primary_logo_group_id),
+            )
 
     # Apply optional custom output dimensions at the end if requested
     if custom_width or custom_height:

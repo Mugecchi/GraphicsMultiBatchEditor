@@ -679,6 +679,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!project) return;
     pushHistory();
 
+    const existingGroups = project.elements.filter((e) => e.type === 'logo_group');
+    const isAdditionalGroup = existingGroups.length > 0;
+    const groupNumber = existingGroups.length + 1;
+
     const maxZ = project.elements.reduce((m, e) => Math.max(m, e.z_index), 0);
     const items: LogoGroupItem[] = initialLogos.map((a, idx) => ({
       id: `lgi_${Date.now().toString(36)}_${idx}`,
@@ -692,13 +696,17 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       visible: true,
     }));
 
+    const nextY = isAdditionalGroup
+      ? Math.min(82, 5 + existingGroups.length * 16)
+      : 5;
+
     const newEl: CanvasElement = {
       id: `el_lg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
-      name: 'Logo Group',
+      name: isAdditionalGroup ? `Logo Group #${groupNumber}` : 'Logo Group',
       type: 'logo_group',
       field_role: 'logos',
       x: 10,
-      y: 5,
+      y: nextY,
       width: 80,
       height: 14,
       rotation: 0,
@@ -709,6 +717,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         logos: items,
         arrangement: 'auto',
         optical_balance: true,
+        bind_to_event_logos: !isAdditionalGroup,
         max_logo_height: 85,
         max_logo_width: 40,
         horizontal_spacing: 2.5,
@@ -725,7 +734,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       project: { ...project, elements: [...project.elements, newEl] },
       selectedElementIds: [newEl.id],
       saveStatus: 'unsaved',
-      statusMessage: 'Added Logo Group',
+      statusMessage: isAdditionalGroup
+        ? `Added independent ${newEl.name}`
+        : 'Added Logo Group',
     });
     scheduleAutoSave(get);
   },
@@ -786,6 +797,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const clones: CanvasElement[] = selected.map((el) => {
       maxZ += 1;
       const cloned = deepClone(el);
+      if (cloned.type === 'logo_group' && cloned.logo_group_props) {
+        cloned.logo_group_props.bind_to_event_logos = false;
+      }
       return {
         ...cloned,
         id: `el_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
@@ -824,6 +838,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const pasted: CanvasElement[] = clipboard.map((el) => {
       maxZ += 1;
       const cloned = deepClone(el);
+      if (cloned.type === 'logo_group' && cloned.logo_group_props) {
+        cloned.logo_group_props.bind_to_event_logos = false;
+      }
       return {
         ...cloned,
         id: `el_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1009,13 +1026,19 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!project) return;
     pushHistory();
 
-    let addedAssetSet = new Set<string>();
+    const primaryGroupId = project.elements.find((e) => e.type === 'logo_group')?.id;
+    let isGroupBoundToEventLogos = false;
+
     const elements = project.elements.map((el) => {
       if (el.id !== groupElementId || !el.logo_group_props) return el;
       const copy = deepClone(el);
-      const newItems: LogoGroupItem[] = assets.map((a, idx) => {
-        addedAssetSet.add(a.id);
-        return {
+      const bindFlag = copy.logo_group_props!.bind_to_event_logos;
+      isGroupBoundToEventLogos = bindFlag !== undefined && bindFlag !== null ? bindFlag : el.id === primaryGroupId;
+
+      const existingAssetIds = new Set(copy.logo_group_props!.logos.map((l) => l.asset_id));
+      const newItems: LogoGroupItem[] = assets
+        .filter((a) => !existingAssetIds.has(a.id))
+        .map((a, idx) => ({
           id: `lgi_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
           asset_id: a.id,
           name: a.name,
@@ -1025,32 +1048,33 @@ export const useStudioStore = create<StudioState>((set, get) => ({
           natural_height: a.natural_height,
           aspect_ratio: a.aspect_ratio,
           visible: true,
-        };
-      });
+        }));
       copy.logo_group_props!.logos = [...copy.logo_group_props!.logos, ...newItems];
       return copy;
     });
 
-    // Also reflect newly added shared logos onto events that have customized logos
-    const events = project.events.map((ev) => {
-      if (!ev.logos || ev.logos.length === 0) return ev;
-      const existingIds = new Set(ev.logos.map((l) => l.asset_id));
-      const toAppend = assets
-        .filter((a) => !existingIds.has(a.id))
-        .map((a, idx) => ({
-          id: `evlg_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
-          asset_id: a.id,
-          name: a.name,
-          url: a.url,
-          relative_path: a.relative_path,
-          natural_width: a.natural_width,
-          natural_height: a.natural_height,
-          aspect_ratio: a.aspect_ratio,
-          visible: true,
-        }));
-      if (toAppend.length === 0) return ev;
-      return { ...ev, logos: [...ev.logos, ...toAppend] };
-    });
+    // Also reflect newly added shared logos onto events that have customized logos ONLY if this group is bound to event.logos
+    const events = isGroupBoundToEventLogos
+      ? project.events.map((ev) => {
+          if (!ev.logos || ev.logos.length === 0) return ev;
+          const existingIds = new Set(ev.logos.map((l) => l.asset_id));
+          const toAppend = assets
+            .filter((a) => !existingIds.has(a.id))
+            .map((a, idx) => ({
+              id: `evlg_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+              asset_id: a.id,
+              name: a.name,
+              url: a.url,
+              relative_path: a.relative_path,
+              natural_width: a.natural_width,
+              natural_height: a.natural_height,
+              aspect_ratio: a.aspect_ratio,
+              visible: true,
+            }));
+          if (toAppend.length === 0) return ev;
+          return { ...ev, logos: [...ev.logos, ...toAppend] };
+        })
+      : project.events;
 
     set({
       project: { ...project, elements, events },
@@ -1064,25 +1088,31 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!project) return;
     pushHistory();
 
+    const primaryGroupId = project.elements.find((e) => e.type === 'logo_group')?.id;
+    let isGroupBoundToEventLogos = false;
     let removedAssetId: string | null = null;
     const elements = project.elements.map((el) => {
       if (el.id !== groupElementId || !el.logo_group_props) return el;
       const copy = deepClone(el);
+      const bindFlag = copy.logo_group_props!.bind_to_event_logos;
+      isGroupBoundToEventLogos = bindFlag !== undefined && bindFlag !== null ? bindFlag : el.id === primaryGroupId;
       const target = copy.logo_group_props!.logos.find((l) => l.id === itemId);
       if (target) removedAssetId = target.asset_id;
       copy.logo_group_props!.logos = copy.logo_group_props!.logos.filter((l) => l.id !== itemId);
       return copy;
     });
 
-    // Also remove that shared logo from events that were customized from shared
-    const events = project.events.map((ev) => {
-      if (!ev.logos || ev.logos.length === 0) return ev;
-      const filtered = ev.logos.filter(
-        (l) => l.id !== itemId && (removedAssetId ? l.asset_id !== removedAssetId : true)
-      );
-      if (filtered.length === ev.logos.length) return ev;
-      return { ...ev, logos: filtered };
-    });
+    // Also remove that shared logo from events that were customized from shared ONLY if bound
+    const events = isGroupBoundToEventLogos
+      ? project.events.map((ev) => {
+          if (!ev.logos || ev.logos.length === 0) return ev;
+          const filtered = ev.logos.filter(
+            (l) => l.id !== itemId && (removedAssetId ? l.asset_id !== removedAssetId : true)
+          );
+          if (filtered.length === ev.logos.length) return ev;
+          return { ...ev, logos: filtered };
+        })
+      : project.events;
 
     set({
       project: { ...project, elements, events },
@@ -1096,12 +1126,16 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!project) return;
     pushHistory();
 
+    const primaryGroupId = project.elements.find((e) => e.type === 'logo_group')?.id;
+    let isGroupBoundToEventLogos = false;
     let movedAssetId: string | null = null;
     let neighborAssetId: string | null = null;
 
     const elements = project.elements.map((el) => {
       if (el.id !== groupElementId || !el.logo_group_props) return el;
       const copy = deepClone(el);
+      const bindFlag = copy.logo_group_props!.bind_to_event_logos;
+      isGroupBoundToEventLogos = bindFlag !== undefined && bindFlag !== null ? bindFlag : el.id === primaryGroupId;
       const list = [...copy.logo_group_props!.logos];
       const idx = list.findIndex((l) => l.id === itemId);
       if (idx === -1) return copy;
@@ -1115,16 +1149,18 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return copy;
     });
 
-    const events = project.events.map((ev) => {
-      if (!ev.logos || ev.logos.length === 0 || !movedAssetId || !neighborAssetId) return ev;
-      const list = [...ev.logos];
-      const fromIdx = list.findIndex((l) => l.id === itemId || l.asset_id === movedAssetId);
-      const toIdx = list.findIndex((l) => l.asset_id === neighborAssetId);
-      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return ev;
-      const [moved] = list.splice(fromIdx, 1);
-      list.splice(toIdx, 0, moved);
-      return { ...ev, logos: list };
-    });
+    const events = isGroupBoundToEventLogos
+      ? project.events.map((ev) => {
+          if (!ev.logos || ev.logos.length === 0 || !movedAssetId || !neighborAssetId) return ev;
+          const list = [...ev.logos];
+          const fromIdx = list.findIndex((l) => l.id === itemId || l.asset_id === movedAssetId);
+          const toIdx = list.findIndex((l) => l.asset_id === neighborAssetId);
+          if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return ev;
+          const [moved] = list.splice(fromIdx, 1);
+          list.splice(toIdx, 0, moved);
+          return { ...ev, logos: list };
+        })
+      : project.events;
 
     set({
       project: { ...project, elements, events },
@@ -1139,12 +1175,16 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!project) return;
     pushHistory();
 
+    const primaryGroupId = project.elements.find((e) => e.type === 'logo_group')?.id;
+    let isGroupBoundToEventLogos = false;
     let draggedAssetId: string | null = null;
     let targetAssetId: string | null = null;
 
     const elements = project.elements.map((el) => {
       if (el.id !== groupElementId || !el.logo_group_props) return el;
       const copy = deepClone(el);
+      const bindFlag = copy.logo_group_props!.bind_to_event_logos;
+      isGroupBoundToEventLogos = bindFlag !== undefined && bindFlag !== null ? bindFlag : el.id === primaryGroupId;
       const list = [...copy.logo_group_props!.logos];
       const fromIdx = list.findIndex((l) => l.id === draggedItemId);
       const toIdx = list.findIndex((l) => l.id === targetItemId);
@@ -1157,18 +1197,20 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return copy;
     });
 
-    const events = project.events.map((ev) => {
-      if (!ev.logos || ev.logos.length === 0 || !draggedAssetId || !targetAssetId) return ev;
-      const list = [...ev.logos];
-      const fromIdx = list.findIndex(
-        (l) => l.id === draggedItemId || l.asset_id === draggedAssetId
-      );
-      const toIdx = list.findIndex((l) => l.id === targetItemId || l.asset_id === targetAssetId);
-      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return ev;
-      const [moved] = list.splice(fromIdx, 1);
-      list.splice(toIdx, 0, moved);
-      return { ...ev, logos: list };
-    });
+    const events = isGroupBoundToEventLogos
+      ? project.events.map((ev) => {
+          if (!ev.logos || ev.logos.length === 0 || !draggedAssetId || !targetAssetId) return ev;
+          const list = [...ev.logos];
+          const fromIdx = list.findIndex(
+            (l) => l.id === draggedItemId || l.asset_id === draggedAssetId
+          );
+          const toIdx = list.findIndex((l) => l.id === targetItemId || l.asset_id === targetAssetId);
+          if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return ev;
+          const [moved] = list.splice(fromIdx, 1);
+          list.splice(toIdx, 0, moved);
+          return { ...ev, logos: list };
+        })
+      : project.events;
 
     set({
       project: { ...project, elements, events },
@@ -1204,10 +1246,14 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!project) return;
     pushHistory();
 
+    const primaryGroupId = project.elements.find((e) => e.type === 'logo_group')?.id;
+    let isGroupBoundToEventLogos = false;
     let oldAssetId: string | null = null;
     const elements = project.elements.map((el) => {
       if (el.id !== groupElementId || !el.logo_group_props) return el;
       const copy = deepClone(el);
+      const bindFlag = copy.logo_group_props!.bind_to_event_logos;
+      isGroupBoundToEventLogos = bindFlag !== undefined && bindFlag !== null ? bindFlag : el.id === primaryGroupId;
       copy.logo_group_props!.logos = copy.logo_group_props!.logos.map((item) => {
         if (item.id === itemId) {
           oldAssetId = item.asset_id;
@@ -1227,24 +1273,26 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return copy;
     });
 
-    const events = project.events.map((ev) => {
-      if (!ev.logos || ev.logos.length === 0) return ev;
-      const logos = ev.logos.map((item) =>
-        item.id === itemId || (oldAssetId && item.asset_id === oldAssetId)
-          ? {
-              ...item,
-              asset_id: newAsset.id,
-              name: newAsset.name,
-              url: newAsset.url,
-              relative_path: newAsset.relative_path,
-              natural_width: newAsset.natural_width,
-              natural_height: newAsset.natural_height,
-              aspect_ratio: newAsset.aspect_ratio,
-            }
-          : item
-      );
-      return { ...ev, logos };
-    });
+    const events = isGroupBoundToEventLogos
+      ? project.events.map((ev) => {
+          if (!ev.logos || ev.logos.length === 0) return ev;
+          const logos = ev.logos.map((item) =>
+            item.id === itemId || (oldAssetId && item.asset_id === oldAssetId)
+              ? {
+                  ...item,
+                  asset_id: newAsset.id,
+                  name: newAsset.name,
+                  url: newAsset.url,
+                  relative_path: newAsset.relative_path,
+                  natural_width: newAsset.natural_width,
+                  natural_height: newAsset.natural_height,
+                  aspect_ratio: newAsset.aspect_ratio,
+                }
+              : item
+          );
+          return { ...ev, logos };
+        })
+      : project.events;
 
     set({
       project: { ...project, elements, events },
@@ -1258,10 +1306,14 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!project) return;
     if (recordHistory) pushHistory();
 
+    const primaryGroupId = project.elements.find((e) => e.type === 'logo_group')?.id;
+    let isGroupBoundToEventLogos = false;
     let targetAssetId: string | null = null;
     const elements = project.elements.map((el) => {
       if (el.id !== groupElementId || !el.logo_group_props) return el;
       const copy = deepClone(el);
+      const bindFlag = copy.logo_group_props!.bind_to_event_logos;
+      isGroupBoundToEventLogos = bindFlag !== undefined && bindFlag !== null ? bindFlag : el.id === primaryGroupId;
       copy.logo_group_props!.logos = copy.logo_group_props!.logos.map((item) => {
         if (item.id === itemId) {
           targetAssetId = item.asset_id;
@@ -1272,16 +1324,18 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return copy;
     });
 
-    // Reflect shared logo size/scale/aspect updates onto customized event rows sharing that logo
-    const events = project.events.map((ev) => {
-      if (!ev.logos || ev.logos.length === 0) return ev;
-      const logos = ev.logos.map((item) =>
-        item.id === itemId || (targetAssetId && item.asset_id === targetAssetId)
-          ? { ...item, ...patch }
-          : item
-      );
-      return { ...ev, logos };
-    });
+    // Reflect shared logo size/scale/aspect updates onto customized event rows sharing that logo ONLY if bound
+    const events = isGroupBoundToEventLogos
+      ? project.events.map((ev) => {
+          if (!ev.logos || ev.logos.length === 0) return ev;
+          const logos = ev.logos.map((item) =>
+            item.id === itemId || (targetAssetId && item.asset_id === targetAssetId)
+              ? { ...item, ...patch }
+              : item
+          );
+          return { ...ev, logos };
+        })
+      : project.events;
 
     set({
       project: { ...project, elements, events },

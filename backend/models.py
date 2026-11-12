@@ -84,6 +84,7 @@ class LogoGroupProps(BaseModel):
     margin: float = 1.0  # inner padding percentage
     crop_transparent: bool = True  # auto-trim transparent borders so logos match visual height/width
     optical_balance: bool = True  # visually balance rectangles vs square/round seals
+    bind_to_event_logos: Optional[bool] = None  # True = synced with event.logos, False = independent logo group set
 
 
 class CanvasElement(BaseModel):
@@ -116,7 +117,8 @@ class ElementOverride(BaseModel):
     height: Optional[float] = None
     visible: Optional[bool] = None
     logo_ids: Optional[List[str]] = None  # Selected subset/order of logos for a logo_group
-    arrangement: Optional[Literal["horizontal", "grid", "centered", "space-between", "space-around"]] = None
+    logos: Optional[List[LogoGroupItem]] = None  # Custom per-group logos for this event
+    arrangement: Optional[Literal["auto", "horizontal", "grid", "centered", "space-between", "space-around"]] = None
 
 
 class EventRecord(BaseModel):

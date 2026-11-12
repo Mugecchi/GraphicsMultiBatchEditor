@@ -83,6 +83,14 @@ export const CenterCanvas: React.FC = () => {
   const activeEvent =
     project.events.find((e) => e.id === project.active_event_id) || project.events[0] || null;
 
+  const primaryLogoGroupId = project.elements.find((e) => e.type === 'logo_group')?.id;
+
+  const isGroupBoundToEvent = (el: CanvasElement) => {
+    const flag = el.logo_group_props?.bind_to_event_logos;
+    if (flag !== undefined && flag !== null) return flag;
+    return el.id === primaryLogoGroupId;
+  };
+
   // Sort elements ascending by z_index for rendering bottom-to-top
   const sortedElements = [...project.elements].sort((a, b) => a.z_index - b.z_index);
 
@@ -132,7 +140,9 @@ export const CenterCanvas: React.FC = () => {
       ) {
         const refW = Math.max(24, interaction.baseLogoPxW || 60);
         const refH = Math.max(24, interaction.baseLogoPxH || 60);
-        const isEventCustomLogos = Boolean(activeEvent?.logos && activeEvent.logos.length > 0);
+        const isEventCustomLogos = Boolean(
+          isGroupBoundToEvent(el) && activeEvent?.logos && activeEvent.logos.length > 0
+        );
         const patchFn = (patch: {
           scale_override?: number;
           width_scale?: number;
@@ -649,8 +659,11 @@ export const CenterCanvas: React.FC = () => {
                 if (ov?.arrangement) {
                   gp.arrangement = ov.arrangement;
                 }
+                const boundToEvent = isGroupBoundToEvent(el);
                 let logosList = gp.logos || [];
-                if (activeEvent?.logos && activeEvent.logos.length > 0) {
+                if (ov?.logos && ov.logos.length > 0) {
+                  logosList = ov.logos;
+                } else if (boundToEvent && activeEvent?.logos && activeEvent.logos.length > 0) {
                   logosList = activeEvent.logos;
                 }
                 if (ov?.logo_ids) {
@@ -669,7 +682,7 @@ export const CenterCanvas: React.FC = () => {
                   >
                     {placements.length === 0 ? (
                       <div className="w-full h-full border border-dashed border-sky-400/50 rounded flex items-center justify-center text-[11px] text-sky-300 bg-sky-950/30 pointer-events-none">
-                        Logo Group — Upload or add logos from the Logos tab
+                        {el.name} — Select & add logos from the Right Sidebar or Logos tab
                       </div>
                     ) : (
                       placements.map((pl) => {
@@ -706,7 +719,10 @@ export const CenterCanvas: React.FC = () => {
                               e.stopPropagation();
                               if (draggedCanvasLogoId !== pl.id) {
                                 const isEventCustom = Boolean(
-                                  activeEvent?.logos && activeEvent.logos.length > 0
+                                  boundToEvent &&
+                                    activeEvent?.logos &&
+                                    activeEvent.logos.length > 0 &&
+                                    !(ov?.logos && ov.logos.length > 0)
                                 );
                                 if (isEventCustom && activeEvent) {
                                   moveEventLogoToIndex(
