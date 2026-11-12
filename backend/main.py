@@ -793,7 +793,7 @@ def _apply_trimmed_logo_to_project_dict(
                 lp["aspect_ratio"] = new_ar
                 lp["url"] = new_url
 
-    # Update all Event-specific custom logo arrays
+    # Update all Event-specific custom logo arrays AND per-LogoGroup element_overrides.logos
     for ev in proj.get("events") or []:
         for lg in ev.get("logos") or []:
             if lg.get("asset_id") == asset_id:
@@ -801,6 +801,14 @@ def _apply_trimmed_logo_to_project_dict(
                 lg["natural_height"] = nh
                 lg["aspect_ratio"] = new_ar
                 lg["url"] = new_url
+        for _el_id, ov in (ev.get("element_overrides") or {}).items():
+            if isinstance(ov, dict) and ov.get("logos"):
+                for lg in ov["logos"]:
+                    if lg.get("asset_id") == asset_id:
+                        lg["natural_width"] = nw
+                        lg["natural_height"] = nh
+                        lg["aspect_ratio"] = new_ar
+                        lg["url"] = new_url
 
     return True
 
@@ -923,6 +931,9 @@ def delete_project_logo(project_id: str, asset_id: str) -> Dict[str, Any]:
     for ev in proj.get("events") or []:
         if ev.get("logos"):
             ev["logos"] = [lg for lg in ev["logos"] if lg.get("asset_id") != asset_id]
+        for _el_id, ov in (ev.get("element_overrides") or {}).items():
+            if isinstance(ov, dict) and ov.get("logos"):
+                ov["logos"] = [lg for lg in ov["logos"] if lg.get("asset_id") != asset_id]
 
     with get_conn() as conn:
         conn.execute(

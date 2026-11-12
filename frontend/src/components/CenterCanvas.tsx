@@ -39,6 +39,7 @@ export const CenterCanvas: React.FC = () => {
     moveEventLogoToIndex,
     updateLogoInGroup,
     updateEventLogo,
+    setElementOverride,
     pushHistory,
     zoom,
     setZoom,
@@ -140,15 +141,25 @@ export const CenterCanvas: React.FC = () => {
       ) {
         const refW = Math.max(24, interaction.baseLogoPxW || 60);
         const refH = Math.max(24, interaction.baseLogoPxH || 60);
+        const ovLogos = activeEvent?.element_overrides?.[el.id]?.logos;
+        const hasOverrideLogos = Boolean(ovLogos && ovLogos.length > 0);
         const isEventCustomLogos = Boolean(
-          isGroupBoundToEvent(el) && activeEvent?.logos && activeEvent.logos.length > 0
+          !hasOverrideLogos &&
+            isGroupBoundToEvent(el) &&
+            activeEvent?.logos &&
+            activeEvent.logos.length > 0
         );
         const patchFn = (patch: {
           scale_override?: number;
           width_scale?: number;
           height_scale?: number;
         }) => {
-          if (isEventCustomLogos && activeEvent) {
+          if (hasOverrideLogos && activeEvent) {
+            const nextList = ovLogos!.map((item) =>
+              item.id === interaction.logoItemId! ? { ...item, ...patch } : item
+            );
+            setElementOverride(activeEvent.id, el.id, { logos: nextList });
+          } else if (isEventCustomLogos && activeEvent) {
             updateEventLogo(activeEvent.id, interaction.logoItemId!, patch, false);
           } else {
             updateLogoInGroup(el.id, interaction.logoItemId!, patch, false);

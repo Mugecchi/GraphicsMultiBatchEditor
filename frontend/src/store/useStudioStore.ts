@@ -1053,28 +1053,56 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return copy;
     });
 
-    // Also reflect newly added shared logos onto events that have customized logos ONLY if this group is bound to event.logos
-    const events = isGroupBoundToEventLogos
-      ? project.events.map((ev) => {
-          if (!ev.logos || ev.logos.length === 0) return ev;
-          const existingIds = new Set(ev.logos.map((l) => l.asset_id));
-          const toAppend = assets
-            .filter((a) => !existingIds.has(a.id))
-            .map((a, idx) => ({
-              id: `evlg_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
-              asset_id: a.id,
-              name: a.name,
-              url: a.url,
-              relative_path: a.relative_path,
-              natural_width: a.natural_width,
-              natural_height: a.natural_height,
-              aspect_ratio: a.aspect_ratio,
-              visible: true,
-            }));
-          if (toAppend.length === 0) return ev;
-          return { ...ev, logos: [...ev.logos, ...toAppend] };
-        })
-      : project.events;
+    // Also reflect newly added shared logos onto events that have customized logos for this group
+    const events = project.events.map((ev) => {
+      let nextEv = ev;
+      if (isGroupBoundToEventLogos && ev.logos && ev.logos.length > 0) {
+        const existingIds = new Set(ev.logos.map((l) => l.asset_id));
+        const toAppend = assets
+          .filter((a) => !existingIds.has(a.id))
+          .map((a, idx) => ({
+            id: `evlg_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+            asset_id: a.id,
+            name: a.name,
+            url: a.url,
+            relative_path: a.relative_path,
+            natural_width: a.natural_width,
+            natural_height: a.natural_height,
+            aspect_ratio: a.aspect_ratio,
+            visible: true,
+          }));
+        if (toAppend.length > 0) {
+          nextEv = { ...nextEv, logos: [...ev.logos, ...toAppend] };
+        }
+      }
+      const ov = nextEv.element_overrides?.[groupElementId];
+      if (ov?.logos && ov.logos.length > 0) {
+        const existingIds = new Set(ov.logos.map((l) => l.asset_id));
+        const toAppend = assets
+          .filter((a) => !existingIds.has(a.id))
+          .map((a, idx) => ({
+            id: `ovlg_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+            asset_id: a.id,
+            name: a.name,
+            url: a.url,
+            relative_path: a.relative_path,
+            natural_width: a.natural_width,
+            natural_height: a.natural_height,
+            aspect_ratio: a.aspect_ratio,
+            visible: true,
+          }));
+        if (toAppend.length > 0) {
+          nextEv = {
+            ...nextEv,
+            element_overrides: {
+              ...(nextEv.element_overrides || {}),
+              [groupElementId]: { ...ov, logos: [...ov.logos, ...toAppend] },
+            },
+          };
+        }
+      }
+      return nextEv;
+    });
 
     set({
       project: { ...project, elements, events },
@@ -1102,17 +1130,34 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return copy;
     });
 
-    // Also remove that shared logo from events that were customized from shared ONLY if bound
-    const events = isGroupBoundToEventLogos
-      ? project.events.map((ev) => {
-          if (!ev.logos || ev.logos.length === 0) return ev;
-          const filtered = ev.logos.filter(
-            (l) => l.id !== itemId && (removedAssetId ? l.asset_id !== removedAssetId : true)
-          );
-          if (filtered.length === ev.logos.length) return ev;
-          return { ...ev, logos: filtered };
-        })
-      : project.events;
+    // Also remove that shared logo from events that were customized from shared for this group
+    const events = project.events.map((ev) => {
+      let nextEv = ev;
+      if (isGroupBoundToEventLogos && ev.logos && ev.logos.length > 0) {
+        const filtered = ev.logos.filter(
+          (l) => l.id !== itemId && (removedAssetId ? l.asset_id !== removedAssetId : true)
+        );
+        if (filtered.length !== ev.logos.length) {
+          nextEv = { ...nextEv, logos: filtered };
+        }
+      }
+      const ov = nextEv.element_overrides?.[groupElementId];
+      if (ov?.logos && ov.logos.length > 0) {
+        const filtered = ov.logos.filter(
+          (l) => l.id !== itemId && (removedAssetId ? l.asset_id !== removedAssetId : true)
+        );
+        if (filtered.length !== ov.logos.length) {
+          nextEv = {
+            ...nextEv,
+            element_overrides: {
+              ...(nextEv.element_overrides || {}),
+              [groupElementId]: { ...ov, logos: filtered },
+            },
+          };
+        }
+      }
+      return nextEv;
+    });
 
     set({
       project: { ...project, elements, events },
@@ -1324,18 +1369,34 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return copy;
     });
 
-    // Reflect shared logo size/scale/aspect updates onto customized event rows sharing that logo ONLY if bound
-    const events = isGroupBoundToEventLogos
-      ? project.events.map((ev) => {
-          if (!ev.logos || ev.logos.length === 0) return ev;
-          const logos = ev.logos.map((item) =>
-            item.id === itemId || (targetAssetId && item.asset_id === targetAssetId)
-              ? { ...item, ...patch }
-              : item
-          );
-          return { ...ev, logos };
-        })
-      : project.events;
+    // Reflect shared logo size/scale/aspect updates onto customized event rows sharing that logo for this group
+    const events = project.events.map((ev) => {
+      let nextEv = ev;
+      if (isGroupBoundToEventLogos && ev.logos && ev.logos.length > 0) {
+        const logos = ev.logos.map((item) =>
+          item.id === itemId || (targetAssetId && item.asset_id === targetAssetId)
+            ? { ...item, ...patch }
+            : item
+        );
+        nextEv = { ...nextEv, logos };
+      }
+      const ov = nextEv.element_overrides?.[groupElementId];
+      if (ov?.logos && ov.logos.length > 0) {
+        const logos = ov.logos.map((item) =>
+          item.id === itemId || (targetAssetId && item.asset_id === targetAssetId)
+            ? { ...item, ...patch }
+            : item
+        );
+        nextEv = {
+          ...nextEv,
+          element_overrides: {
+            ...(nextEv.element_overrides || {}),
+            [groupElementId]: { ...ov, logos },
+          },
+        };
+      }
+      return nextEv;
+    });
 
     set({
       project: { ...project, elements, events },
@@ -1433,11 +1494,27 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       return el;
     });
     const events = project.events.map((ev) => {
-      if (!ev.logos || ev.logos.length === 0) return ev;
-      return {
-        ...ev,
-        logos: ev.logos.map((lg) => (lg.asset_id === assetId ? { ...lg, name: clean } : lg)),
-      };
+      let nextLogos = ev.logos || [];
+      let changed = false;
+      if (nextLogos.some((lg) => lg.asset_id === assetId)) {
+        nextLogos = nextLogos.map((lg) => (lg.asset_id === assetId ? { ...lg, name: clean } : lg));
+        changed = true;
+      }
+      let nextOverrides = ev.element_overrides || {};
+      for (const [elId, ov] of Object.entries(nextOverrides)) {
+        if (ov?.logos && ov.logos.some((lg) => lg.asset_id === assetId)) {
+          nextOverrides = {
+            ...nextOverrides,
+            [elId]: {
+              ...ov,
+              logos: ov.logos.map((lg) => (lg.asset_id === assetId ? { ...lg, name: clean } : lg)),
+            },
+          };
+          changed = true;
+        }
+      }
+      if (!changed) return ev;
+      return { ...ev, logos: nextLogos, element_overrides: nextOverrides };
     });
 
     set({

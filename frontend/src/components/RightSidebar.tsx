@@ -764,13 +764,43 @@ export const RightSidebar: React.FC = () => {
               gp.bind_to_event_logos !== undefined && gp.bind_to_event_logos !== null
                 ? gp.bind_to_event_logos
                 : el.id === primaryLogoGroupId;
+            const ovLogos = activeEvent?.element_overrides?.[el.id]?.logos;
+            const hasOverrideLogos = Boolean(ovLogos && ovLogos.length > 0);
             const isEditingEventLogos = Boolean(
-              isBoundToEventLogos && activeEvent?.logos && activeEvent.logos.length > 0
+              !hasOverrideLogos &&
+                isBoundToEventLogos &&
+                activeEvent?.logos &&
+                activeEvent.logos.length > 0
             );
-            const activeLogosList = isEditingEventLogos ? activeEvent!.logos : gp.logos;
+            const activeLogosList = hasOverrideLogos
+              ? ovLogos!
+              : isEditingEventLogos
+              ? activeEvent!.logos
+              : gp.logos;
 
             const toggleAssetInSelectedGroup = (asset: LogoAsset) => {
-              if (isEditingEventLogos && activeEvent) {
+              if (hasOverrideLogos && activeEvent) {
+                const exists = ovLogos!.find((l) => l.asset_id === asset.id);
+                const nextList = exists
+                  ? ovLogos!.filter((l) => l.asset_id !== asset.id)
+                  : [
+                      ...ovLogos!,
+                      {
+                        id: `ovlg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+                        asset_id: asset.id,
+                        name: asset.name,
+                        url: asset.url,
+                        relative_path: asset.relative_path,
+                        natural_width: asset.natural_width,
+                        natural_height: asset.natural_height,
+                        aspect_ratio: asset.aspect_ratio,
+                        visible: true,
+                      },
+                    ];
+                setElementOverride(activeEvent.id, el.id, {
+                  logos: nextList.length > 0 ? nextList : null,
+                });
+              } else if (isEditingEventLogos && activeEvent) {
                 const exists = activeEvent.logos.find((l) => l.asset_id === asset.id);
                 if (exists) {
                   useStudioStore.getState().updateEvent(activeEvent.id, {
@@ -1221,7 +1251,12 @@ export const RightSidebar: React.FC = () => {
                       itemId: string,
                       patch: Partial<(typeof activeLogosList)[0]>
                     ) => {
-                      if (isEditingEventLogos && activeEvent) {
+                      if (hasOverrideLogos && activeEvent) {
+                        const nextList = ovLogos!.map((item) =>
+                          item.id === itemId ? { ...item, ...patch } : item
+                        );
+                        setElementOverride(activeEvent.id, el.id, { logos: nextList });
+                      } else if (isEditingEventLogos && activeEvent) {
                         updateEventLogo(activeEvent.id, itemId, patch, true);
                       } else {
                         updateLogoInGroup(el.id, itemId, patch, true);
