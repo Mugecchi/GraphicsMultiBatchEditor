@@ -1,4 +1,10 @@
-export type ArrangementMode = 'horizontal' | 'grid' | 'centered' | 'space-between' | 'space-around';
+export type ArrangementMode =
+  | 'auto'
+  | 'horizontal'
+  | 'grid'
+  | 'centered'
+  | 'space-between'
+  | 'space-around';
 
 export interface LogoAsset {
   id: string;
@@ -80,6 +86,7 @@ export interface LogoGroupProps {
   opacity: number;
   margin: number;
   crop_transparent?: boolean;
+  optical_balance?: boolean;
 }
 
 export interface CanvasElement {

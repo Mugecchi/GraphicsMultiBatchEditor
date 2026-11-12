@@ -72,7 +72,7 @@ class LogoElementProps(BaseModel):
 
 class LogoGroupProps(BaseModel):
     logos: List[LogoGroupItem] = Field(default_factory=list)
-    arrangement: Literal["horizontal", "grid", "centered", "space-between", "space-around"] = "horizontal"
+    arrangement: Literal["auto", "horizontal", "grid", "centered", "space-between", "space-around"] = "horizontal"
     max_logo_height: float = 80.0  # percentage of group height (10-100)
     max_logo_width: float = 45.0   # percentage of group width (5-100)
     horizontal_spacing: float = 2.5  # percentage of group width
@@ -83,6 +83,7 @@ class LogoGroupProps(BaseModel):
     opacity: float = 1.0
     margin: float = 1.0  # inner padding percentage
     crop_transparent: bool = True  # auto-trim transparent borders so logos match visual height/width
+    optical_balance: bool = True  # visually balance rectangles vs square/round seals
 
 
 class CanvasElement(BaseModel):

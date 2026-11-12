@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Layers,
   Lock,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -35,6 +36,8 @@ export const LeftSidebar: React.FC = () => {
     addLogoElement,
     addLogoGroupElement,
     addAssetsToLogoGroup,
+    renameLogoAsset,
+    deleteLogoAsset,
     updateElement,
     deleteSelectedElements,
     duplicateSelectedElements,
@@ -49,6 +52,9 @@ export const LeftSidebar: React.FC = () => {
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  const [renamingAssetId, setRenamingAssetId] = useState<string | null>(null);
+  const [renameAssetVal, setRenameAssetVal] = useState('');
+  const [logoSearch, setLogoSearch] = useState('');
   const [uploadingLogos, setUploadingLogos] = useState(false);
   const [eventSearch, setEventSearch] = useState('');
   const [newCustomKey, setNewCustomKey] = useState('');
@@ -105,6 +111,12 @@ export const LeftSidebar: React.FC = () => {
       addLogoElement(asset);
     }
   };
+
+  const filteredLogos = project.assets.filter((asset) => {
+    const q = logoSearch.trim().toLowerCase();
+    if (!q) return true;
+    return asset.name.toLowerCase().includes(q);
+  });
 
   const filteredEvents = project.events.filter((ev) => {
     const q = eventSearch.trim().toLowerCase();
@@ -478,52 +490,143 @@ export const LeftSidebar: React.FC = () => {
 
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Uploaded Logo Library ({project.assets.length})
+                Uploaded Logo Library ({filteredLogos.length}/{project.assets.length})
               </span>
               {project.assets.length > 0 && (
                 <button
                   onClick={() => {
                     const grp = project.elements.find((e) => e.type === 'logo_group');
                     if (grp) {
-                      addAssetsToLogoGroup(grp.id, project.assets);
+                      addAssetsToLogoGroup(grp.id, filteredLogos);
                       selectElement(grp.id);
                     } else {
-                      addLogoGroupElement(project.assets);
+                      addLogoGroupElement(filteredLogos);
                     }
                   }}
                   className="text-[11px] text-sky-400 hover:underline font-semibold"
                 >
-                  + Add All to Logo Group
+                  {logoSearch.trim() ? '+ Add Filtered to Group' : '+ Add All to Logo Group'}
                 </button>
               )}
             </div>
+
+            {project.assets.length > 0 && (
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                <input
+                  type="text"
+                  placeholder="Search logos by name..."
+                  value={logoSearch}
+                  onChange={(e) => setLogoSearch(e.target.value)}
+                  className="w-full pl-8 pr-6 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-sky-500"
+                />
+                {logoSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setLogoSearch('')}
+                    className="absolute right-2 top-1.5 text-xs text-slate-400 hover:text-slate-200"
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
 
             {project.assets.length === 0 ? (
               <div className="text-xs text-slate-500 text-center py-6 border border-slate-200 dark:border-slate-800 rounded-lg">
                 No logos uploaded yet. Upload partner or sponsor logos above.
               </div>
+            ) : filteredLogos.length === 0 ? (
+              <div className="text-xs text-slate-500 text-center py-6 border border-slate-200 dark:border-slate-800 rounded-lg">
+                No logos match "{logoSearch}".
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-2.5">
-                {project.assets.map((asset) => (
+                {filteredLogos.map((asset) => (
                   <div
                     key={asset.id}
-                    draggable
+                    draggable={renamingAssetId !== asset.id}
                     onDragStart={(e) => {
                       e.dataTransfer.setData('application/tarp-logo-asset', JSON.stringify(asset));
                     }}
-                    className="group p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:border-sky-500 transition flex flex-col justify-between"
+                    className="group p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:border-sky-500 transition flex flex-col justify-between relative"
                   >
-                    <div className="h-16 bg-checkerboard rounded flex items-center justify-center p-1.5 overflow-hidden">
+                    <div className="h-16 bg-checkerboard rounded flex items-center justify-center p-1.5 overflow-hidden relative">
                       <img
                         src={asset.url}
                         alt={asset.name}
                         className="max-h-full max-w-full object-contain"
                       />
+                      <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition bg-slate-900/80 rounded p-0.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingAssetId(asset.id);
+                            setRenameAssetVal(asset.name);
+                          }}
+                          className="p-1 rounded hover:bg-sky-500/30 text-sky-300"
+                          title="Rename logo in pool"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (
+                              window.confirm(
+                                `Delete logo "${asset.name}" from the project pool and remove it from all logo groups?`
+                              )
+                            ) {
+                              deleteLogoAsset(asset.id);
+                            }
+                          }}
+                          className="p-1 rounded hover:bg-rose-500/30 text-rose-400"
+                          title="Delete logo from pool"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                     <div className="mt-1.5">
-                      <div className="text-[11px] font-semibold truncate" title={asset.name}>
-                        {asset.name}
-                      </div>
+                      {renamingAssetId === asset.id ? (
+                        <input
+                          type="text"
+                          value={renameAssetVal}
+                          onChange={(e) => setRenameAssetVal(e.target.value)}
+                          onBlur={() => {
+                            if (renameAssetVal.trim()) {
+                              renameLogoAsset(asset.id, renameAssetVal.trim());
+                            }
+                            setRenamingAssetId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              if (renameAssetVal.trim()) {
+                                renameLogoAsset(asset.id, renameAssetVal.trim());
+                              }
+                              setRenamingAssetId(null);
+                            } else if (e.key === 'Escape') {
+                              setRenamingAssetId(null);
+                            }
+                          }}
+                          autoFocus
+                          className="w-full px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-sky-500 text-[11px] font-semibold outline-none"
+                        />
+                      ) : (
+                        <div
+                          onDoubleClick={() => {
+                            setRenamingAssetId(asset.id);
+                            setRenameAssetVal(asset.name);
+                          }}
+                          className="text-[11px] font-semibold truncate cursor-pointer hover:text-sky-400"
+                          title={`${asset.name} (Double-click to rename)`}
+                        >
+                          {asset.name}
+                        </div>
+                      )}
                       <div className="text-[10px] text-slate-400 font-mono">
                         {asset.natural_width}×{asset.natural_height}
                       </div>

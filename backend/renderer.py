@@ -114,24 +114,65 @@ def compute_logo_group_layout(
     max_per_row = max(1, int(group_props.get("max_logos_per_row", 6)))
     h_align = group_props.get("alignment", "center")
     v_align = group_props.get("vertical_alignment", "middle")
+    optical_balance = bool(group_props.get("optical_balance", False) or arrangement == "auto")
 
-    # Determine rows based on arrangement mode
+    gap_x = inner_w * (h_space_pct / 100.0)
+
+    def _effective_ar(item: Dict[str, Any]) -> float:
+        ar = float(item.get("aspect_ratio") or 1.0)
+        if ar <= 0.01:
+            nw = float(item.get("natural_width") or 100)
+            nh = float(item.get("natural_height") or 100)
+            ar = nw / max(1.0, nh)
+        return max(0.1, min(12.0, ar))
+
+    # Determine rows based on arrangement mode + smart overflow wrapping
+    rows: List[List[Dict[str, Any]]] = []
     if arrangement == "grid" or (count > max_per_row and arrangement not in ("horizontal", "space-between", "space-around")):
         cols = min(count, max_per_row)
-    elif arrangement == "grid":
-        cols = min(count, max_per_row)
+        for i in range(0, count, cols):
+            rows.append(visible_logos[i : i + cols])
     else:
-        # For horizontal / centered / space-between / space-around:
-        # If max_logos_per_row is explicitly smaller than count and arrangement == "grid", split into rows;
-        # Also if count > max_per_row and user chose grid or multi-row
-        cols = count if arrangement != "grid" else min(count, max_per_row)
+        # Check if a single row would become unreadably small or overflow when box_h allows wrapping
+        base_single_h = inner_h * (max_logo_h_pct / 100.0)
+        permitted_single_w = inner_w * (max_logo_w_pct / 100.0)
+        est_total_w = 0.0
+        for item in visible_logos:
+            ar = _effective_ar(item)
+            opt_factor = (1.0 / (ar ** 0.32)) if optical_balance else 1.0
+            opt_factor = max(0.55, min(1.30, opt_factor))
+            bh = base_single_h * opt_factor
+            bw = min(permitted_single_w, bh * ar)
+            est_total_w += bw * float(item.get("scale_override") or 1.0) * float(item.get("width_scale") or 1.0)
+        est_total_w += gap_x * max(0, count - 1)
 
-    rows: List[List[Dict[str, Any]]] = []
-    for i in range(0, count, cols):
-        rows.append(visible_logos[i : i + cols])
+        # Auto-wrap into balanced rows if arrangement == 'auto' or if single row shrinks below 42% of target height
+        should_wrap = False
+        if count > max_per_row:
+            should_wrap = True
+        elif arrangement == "auto" and count >= 4 and est_total_w > inner_w * 1.35:
+            should_wrap = True
+        elif count >= 5 and est_total_w > inner_w * 2.35 and inner_h >= 60.0:
+            should_wrap = True
+
+        if should_wrap:
+            # Split into balanced rows (e.g. 7 logos -> 4 + 3 instead of 6 + 1)
+            est_rows = max(2, int((est_total_w / max(1.0, inner_w * 1.15)) + 0.999))
+            if count > max_per_row:
+                est_rows = max(est_rows, (count + max_per_row - 1) // max_per_row)
+            est_rows = min(count, max(2, min(4, est_rows)))
+            base_per_row = count // est_rows
+            rem = count % est_rows
+            idx_cursor = 0
+            for r_idx in range(est_rows):
+                take = base_per_row + (1 if r_idx < rem else 0)
+                if take > 0:
+                    rows.append(visible_logos[idx_cursor : idx_cursor + take])
+                    idx_cursor += take
+        else:
+            rows = [visible_logos]
 
     num_rows = len(rows)
-    gap_x = inner_w * (h_space_pct / 100.0)
     gap_y = inner_h * (v_space_pct / 100.0) if num_rows > 1 else 0.0
 
     total_v_gaps = gap_y * (num_rows - 1)
@@ -142,19 +183,18 @@ def compute_logo_group_layout(
     row_layouts: List[Dict[str, Any]] = []
     for row_items in rows:
         n_row = len(row_items)
-        # Step 1: Size each logo to permitted_h while respecting permitted_w and natural aspect ratio
+        # Step 1: Size each logo to permitted_h while respecting permitted_w, optical balance, and natural aspect ratio
         sized_items: List[Dict[str, Any]] = []
         for item in row_items:
-            ar = float(item.get("aspect_ratio") or 1.0)
-            if ar <= 0.01:
-                nw = float(item.get("natural_width") or 100)
-                nh = float(item.get("natural_height") or 100)
-                ar = nw / max(1.0, nh)
+            ar = _effective_ar(item)
             scale_mult = float(item.get("scale_override") or 1.0)
             w_scale = float(item.get("width_scale") or 1.0)
             h_scale = float(item.get("height_scale") or 1.0)
 
-            base_h = permitted_h
+            opt_factor = (1.0 / (ar ** 0.32)) if optical_balance else 1.0
+            opt_factor = max(0.55, min(1.30, opt_factor))
+
+            base_h = permitted_h * opt_factor
             base_w = base_h * ar
             if base_w > permitted_w:
                 base_w = permitted_w
@@ -162,14 +202,33 @@ def compute_logo_group_layout(
 
             h = max(4.0, base_h * scale_mult * h_scale)
             w = max(4.0, base_w * scale_mult * w_scale)
+
+            # Never let a single oversized logo exceed inner_w or avail_row_h
+            if w > inner_w:
+                clamp_s = inner_w / w
+                w *= clamp_s
+                h *= clamp_s
+            if h > avail_row_h:
+                clamp_s = avail_row_h / h
+                w *= clamp_s
+                h *= clamp_s
+
             sized_items.append({"item": item, "w": w, "h": h, "ar": ar})
 
-        # Step 2: Check if total width + gaps exceeds inner_w; if so, proportionally scale down the row
+        # Step 2: Check if total width + gaps exceeds inner_w; if so, proportionally scale down both logos AND gaps
         min_gap = gap_x
         total_logos_w = sum(x["w"] for x in sized_items)
         total_gaps_w = min_gap * max(0, n_row - 1)
+        row_step_gap = min_gap
+
         if total_logos_w + total_gaps_w > inner_w and total_logos_w > 0:
-            avail_for_logos = max(4.0 * n_row, inner_w - total_gaps_w)
+            # If gaps alone take more than 25% of inner_w, compress gap first so logos stay larger and never overflow right
+            max_allowed_gaps_w = inner_w * 0.22
+            if total_gaps_w > max_allowed_gaps_w and n_row > 1:
+                row_step_gap = max_allowed_gaps_w / (n_row - 1)
+                total_gaps_w = row_step_gap * (n_row - 1)
+
+            avail_for_logos = max(2.0 * n_row, inner_w - total_gaps_w)
             shrink_factor = avail_for_logos / total_logos_w
             for x in sized_items:
                 x["w"] *= shrink_factor
@@ -182,10 +241,23 @@ def compute_logo_group_layout(
                 "items": sized_items,
                 "total_logos_w": total_logos_w,
                 "row_h": row_h,
+                "step_gap": row_step_gap,
             }
         )
 
+    # Step 3: Ensure total vertical height never overflows inner_h
     total_content_h = sum(r["row_h"] for r in row_layouts) + gap_y * max(0, num_rows - 1)
+    if total_content_h > inner_h and total_content_h > 0:
+        v_shrink = inner_h / total_content_h
+        gap_y *= v_shrink
+        for r_info in row_layouts:
+            r_info["row_h"] *= v_shrink
+            for x in r_info["items"]:
+                x["w"] *= v_shrink
+                x["h"] *= v_shrink
+            r_info["total_logos_w"] = sum(x["w"] for x in r_info["items"])
+        total_content_h = sum(r["row_h"] for r in row_layouts) + gap_y * max(0, num_rows - 1)
+
     if v_align == "top":
         curr_y = inner_y
     elif v_align == "bottom":
@@ -199,6 +271,7 @@ def compute_logo_group_layout(
         n_row = len(sized_items)
         total_logos_w = r_info["total_logos_w"]
         row_h = r_info["row_h"]
+        base_step_gap = r_info["step_gap"]
 
         if arrangement == "space-between" and n_row > 1:
             dynamic_gap = max(0.0, (inner_w - total_logos_w) / (n_row - 1))
@@ -210,13 +283,16 @@ def compute_logo_group_layout(
             curr_x = inner_x + unit_space
             step_gap = unit_space * 2.0
         else:
-            # horizontal, centered, or grid
-            step_gap = gap_x
+            # auto, horizontal, centered, or grid
+            step_gap = base_step_gap
             row_total_w = total_logos_w + step_gap * max(0, n_row - 1)
-            if arrangement == "centered" or h_align == "center":
-                curr_x = inner_x + (inner_w - row_total_w) / 2.0
+            if row_total_w > inner_w and n_row > 1:
+                step_gap = max(0.0, (inner_w - total_logos_w) / (n_row - 1))
+                row_total_w = total_logos_w + step_gap * (n_row - 1)
+            if arrangement in ("centered", "auto") or h_align == "center":
+                curr_x = inner_x + max(0.0, (inner_w - row_total_w) / 2.0)
             elif h_align == "right":
-                curr_x = inner_x + (inner_w - row_total_w)
+                curr_x = inner_x + max(0.0, inner_w - row_total_w)
             else:
                 curr_x = inner_x
 

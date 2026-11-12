@@ -118,6 +118,8 @@ interface StudioState {
   ) => void;
   trimLogoAsset: (assetId: string, mode?: 'auto' | 'circle') => Promise<void>;
   trimAllLogoAssets: (mode?: 'auto' | 'circle') => Promise<void>;
+  renameLogoAsset: (assetId: string, newName: string) => void;
+  deleteLogoAsset: (assetId: string) => Promise<void>;
 
   // Event Management & Overrides
   setActiveEvent: (eventId: string) => void;
@@ -1002,12 +1004,17 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   },
 
   addAssetsToLogoGroup: (groupElementId, assets) => {
-    const { updateElementNested } = get();
-    updateElementNested(
-      groupElementId,
-      (el) => {
-        if (!el.logo_group_props) return el;
-        const newItems: LogoGroupItem[] = assets.map((a, idx) => ({
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+
+    let addedAssetSet = new Set<string>();
+    const elements = project.elements.map((el) => {
+      if (el.id !== groupElementId || !el.logo_group_props) return el;
+      const copy = deepClone(el);
+      const newItems: LogoGroupItem[] = assets.map((a, idx) => {
+        addedAssetSet.add(a.id);
+        return {
           id: `lgi_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
           asset_id: a.id,
           name: a.name,
@@ -1017,65 +1024,156 @@ export const useStudioStore = create<StudioState>((set, get) => ({
           natural_height: a.natural_height,
           aspect_ratio: a.aspect_ratio,
           visible: true,
+        };
+      });
+      copy.logo_group_props!.logos = [...copy.logo_group_props!.logos, ...newItems];
+      return copy;
+    });
+
+    // Also reflect newly added shared logos onto events that have customized logos
+    const events = project.events.map((ev) => {
+      if (!ev.logos || ev.logos.length === 0) return ev;
+      const existingIds = new Set(ev.logos.map((l) => l.asset_id));
+      const toAppend = assets
+        .filter((a) => !existingIds.has(a.id))
+        .map((a, idx) => ({
+          id: `evlg_${Date.now().toString(36)}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+          asset_id: a.id,
+          name: a.name,
+          url: a.url,
+          relative_path: a.relative_path,
+          natural_width: a.natural_width,
+          natural_height: a.natural_height,
+          aspect_ratio: a.aspect_ratio,
+          visible: true,
         }));
-        el.logo_group_props.logos = [...el.logo_group_props.logos, ...newItems];
-        return el;
-      },
-      true
-    );
+      if (toAppend.length === 0) return ev;
+      return { ...ev, logos: [...ev.logos, ...toAppend] };
+    });
+
+    set({
+      project: { ...project, elements, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   removeLogoFromGroup: (groupElementId, itemId) => {
-    const { updateElementNested } = get();
-    updateElementNested(
-      groupElementId,
-      (el) => {
-        if (!el.logo_group_props) return el;
-        el.logo_group_props.logos = el.logo_group_props.logos.filter((l) => l.id !== itemId);
-        return el;
-      },
-      true
-    );
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+
+    let removedAssetId: string | null = null;
+    const elements = project.elements.map((el) => {
+      if (el.id !== groupElementId || !el.logo_group_props) return el;
+      const copy = deepClone(el);
+      const target = copy.logo_group_props!.logos.find((l) => l.id === itemId);
+      if (target) removedAssetId = target.asset_id;
+      copy.logo_group_props!.logos = copy.logo_group_props!.logos.filter((l) => l.id !== itemId);
+      return copy;
+    });
+
+    // Also remove that shared logo from events that were customized from shared
+    const events = project.events.map((ev) => {
+      if (!ev.logos || ev.logos.length === 0) return ev;
+      const filtered = ev.logos.filter(
+        (l) => l.id !== itemId && (removedAssetId ? l.asset_id !== removedAssetId : true)
+      );
+      if (filtered.length === ev.logos.length) return ev;
+      return { ...ev, logos: filtered };
+    });
+
+    set({
+      project: { ...project, elements, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   reorderLogoInGroup: (groupElementId, itemId, direction) => {
-    const { updateElementNested } = get();
-    updateElementNested(
-      groupElementId,
-      (el) => {
-        if (!el.logo_group_props) return el;
-        const list = [...el.logo_group_props.logos];
-        const idx = list.findIndex((l) => l.id === itemId);
-        if (idx === -1) return el;
-        const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
-        if (targetIdx < 0 || targetIdx >= list.length) return el;
-        const [moved] = list.splice(idx, 1);
-        list.splice(targetIdx, 0, moved);
-        el.logo_group_props.logos = list;
-        return el;
-      },
-      true
-    );
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+
+    let movedAssetId: string | null = null;
+    let neighborAssetId: string | null = null;
+
+    const elements = project.elements.map((el) => {
+      if (el.id !== groupElementId || !el.logo_group_props) return el;
+      const copy = deepClone(el);
+      const list = [...copy.logo_group_props!.logos];
+      const idx = list.findIndex((l) => l.id === itemId);
+      if (idx === -1) return copy;
+      const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= list.length) return copy;
+      movedAssetId = list[idx].asset_id;
+      neighborAssetId = list[targetIdx].asset_id;
+      const [moved] = list.splice(idx, 1);
+      list.splice(targetIdx, 0, moved);
+      copy.logo_group_props!.logos = list;
+      return copy;
+    });
+
+    const events = project.events.map((ev) => {
+      if (!ev.logos || ev.logos.length === 0 || !movedAssetId || !neighborAssetId) return ev;
+      const list = [...ev.logos];
+      const fromIdx = list.findIndex((l) => l.id === itemId || l.asset_id === movedAssetId);
+      const toIdx = list.findIndex((l) => l.asset_id === neighborAssetId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return ev;
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      return { ...ev, logos: list };
+    });
+
+    set({
+      project: { ...project, elements, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   moveLogoInGroupToIndex: (groupElementId, draggedItemId, targetItemId) => {
     if (!draggedItemId || !targetItemId || draggedItemId === targetItemId) return;
-    const { updateElementNested } = get();
-    updateElementNested(
-      groupElementId,
-      (el) => {
-        if (!el.logo_group_props) return el;
-        const list = [...el.logo_group_props.logos];
-        const fromIdx = list.findIndex((l) => l.id === draggedItemId);
-        const toIdx = list.findIndex((l) => l.id === targetItemId);
-        if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return el;
-        const [moved] = list.splice(fromIdx, 1);
-        list.splice(toIdx, 0, moved);
-        el.logo_group_props.logos = list;
-        return el;
-      },
-      true
-    );
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+
+    let draggedAssetId: string | null = null;
+    let targetAssetId: string | null = null;
+
+    const elements = project.elements.map((el) => {
+      if (el.id !== groupElementId || !el.logo_group_props) return el;
+      const copy = deepClone(el);
+      const list = [...copy.logo_group_props!.logos];
+      const fromIdx = list.findIndex((l) => l.id === draggedItemId);
+      const toIdx = list.findIndex((l) => l.id === targetItemId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return copy;
+      draggedAssetId = list[fromIdx].asset_id;
+      targetAssetId = list[toIdx].asset_id;
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      copy.logo_group_props!.logos = list;
+      return copy;
+    });
+
+    const events = project.events.map((ev) => {
+      if (!ev.logos || ev.logos.length === 0 || !draggedAssetId || !targetAssetId) return ev;
+      const list = [...ev.logos];
+      const fromIdx = list.findIndex(
+        (l) => l.id === draggedItemId || l.asset_id === draggedAssetId
+      );
+      const toIdx = list.findIndex((l) => l.id === targetItemId || l.asset_id === targetAssetId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return ev;
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      return { ...ev, logos: list };
+    });
+
+    set({
+      project: { ...project, elements, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   moveEventLogoToIndex: (eventId, draggedItemId, targetItemId) => {
@@ -1101,44 +1199,94 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   },
 
   replaceLogoInGroup: (groupElementId, itemId, newAsset) => {
-    const { updateElementNested } = get();
-    updateElementNested(
-      groupElementId,
-      (el) => {
-        if (!el.logo_group_props) return el;
-        el.logo_group_props.logos = el.logo_group_props.logos.map((item) =>
-          item.id === itemId
-            ? {
-                ...item,
-                asset_id: newAsset.id,
-                name: newAsset.name,
-                url: newAsset.url,
-                relative_path: newAsset.relative_path,
-                natural_width: newAsset.natural_width,
-                natural_height: newAsset.natural_height,
-                aspect_ratio: newAsset.aspect_ratio,
-              }
-            : item
-        );
-        return el;
-      },
-      true
-    );
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+
+    let oldAssetId: string | null = null;
+    const elements = project.elements.map((el) => {
+      if (el.id !== groupElementId || !el.logo_group_props) return el;
+      const copy = deepClone(el);
+      copy.logo_group_props!.logos = copy.logo_group_props!.logos.map((item) => {
+        if (item.id === itemId) {
+          oldAssetId = item.asset_id;
+          return {
+            ...item,
+            asset_id: newAsset.id,
+            name: newAsset.name,
+            url: newAsset.url,
+            relative_path: newAsset.relative_path,
+            natural_width: newAsset.natural_width,
+            natural_height: newAsset.natural_height,
+            aspect_ratio: newAsset.aspect_ratio,
+          };
+        }
+        return item;
+      });
+      return copy;
+    });
+
+    const events = project.events.map((ev) => {
+      if (!ev.logos || ev.logos.length === 0) return ev;
+      const logos = ev.logos.map((item) =>
+        item.id === itemId || (oldAssetId && item.asset_id === oldAssetId)
+          ? {
+              ...item,
+              asset_id: newAsset.id,
+              name: newAsset.name,
+              url: newAsset.url,
+              relative_path: newAsset.relative_path,
+              natural_width: newAsset.natural_width,
+              natural_height: newAsset.natural_height,
+              aspect_ratio: newAsset.aspect_ratio,
+            }
+          : item
+      );
+      return { ...ev, logos };
+    });
+
+    set({
+      project: { ...project, elements, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   updateLogoInGroup: (groupElementId, itemId, patch, recordHistory = false) => {
-    const { updateElementNested } = get();
-    updateElementNested(
-      groupElementId,
-      (el) => {
-        if (!el.logo_group_props) return el;
-        el.logo_group_props.logos = el.logo_group_props.logos.map((item) =>
-          item.id === itemId ? { ...item, ...patch } : item
-        );
-        return el;
-      },
-      recordHistory
-    );
+    const { project, pushHistory } = get();
+    if (!project) return;
+    if (recordHistory) pushHistory();
+
+    let targetAssetId: string | null = null;
+    const elements = project.elements.map((el) => {
+      if (el.id !== groupElementId || !el.logo_group_props) return el;
+      const copy = deepClone(el);
+      copy.logo_group_props!.logos = copy.logo_group_props!.logos.map((item) => {
+        if (item.id === itemId) {
+          targetAssetId = item.asset_id;
+          return { ...item, ...patch };
+        }
+        return item;
+      });
+      return copy;
+    });
+
+    // Reflect shared logo size/scale/aspect updates onto customized event rows sharing that logo
+    const events = project.events.map((ev) => {
+      if (!ev.logos || ev.logos.length === 0) return ev;
+      const logos = ev.logos.map((item) =>
+        item.id === itemId || (targetAssetId && item.asset_id === targetAssetId)
+          ? { ...item, ...patch }
+          : item
+      );
+      return { ...ev, logos };
+    });
+
+    set({
+      project: { ...project, elements, events },
+      saveStatus: 'unsaved',
+    });
+    scheduleAutoSave(get);
   },
 
   updateEventLogo: (eventId, itemId, patch, recordHistory = false) => {
@@ -1204,6 +1352,69 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       set({
         saveStatus: 'error',
         statusMessage: `Trim all failed: ${err?.message || 'Unknown error'}`,
+      });
+    }
+  },
+
+  renameLogoAsset: (assetId, newName) => {
+    const clean = newName.trim();
+    if (!clean) return;
+    const { project, pushHistory } = get();
+    if (!project) return;
+    pushHistory();
+
+    const assets = project.assets.map((a) => (a.id === assetId ? { ...a, name: clean } : a));
+    const elements = project.elements.map((el) => {
+      if (el.type === 'logo_group' && el.logo_group_props) {
+        const copy = deepClone(el);
+        copy.logo_group_props!.logos = copy.logo_group_props!.logos.map((lg) =>
+          lg.asset_id === assetId ? { ...lg, name: clean } : lg
+        );
+        return copy;
+      }
+      if (el.type === 'logo' && el.logo_props?.asset_id === assetId) {
+        return { ...el, name: clean };
+      }
+      return el;
+    });
+    const events = project.events.map((ev) => {
+      if (!ev.logos || ev.logos.length === 0) return ev;
+      return {
+        ...ev,
+        logos: ev.logos.map((lg) => (lg.asset_id === assetId ? { ...lg, name: clean } : lg)),
+      };
+    });
+
+    set({
+      project: { ...project, assets, elements, events },
+      saveStatus: 'unsaved',
+      statusMessage: `Renamed logo to "${clean}"`,
+    });
+    scheduleAutoSave(get);
+  },
+
+  deleteLogoAsset: async (assetId) => {
+    const { project, pushHistory, saveProjectNow } = get();
+    if (!project) return;
+    const target = project.assets.find((a) => a.id === assetId);
+    if (!target) return;
+    pushHistory();
+    set({
+      saveStatus: 'saving',
+      statusMessage: `Deleting logo "${target.name}" from pool...`,
+    });
+    try {
+      await saveProjectNow();
+      const updated = await api.deleteLogo(project.id, assetId);
+      set({
+        project: updated,
+        saveStatus: 'saved',
+        statusMessage: `Deleted logo "${target.name}" from project pool`,
+      });
+    } catch (err: any) {
+      set({
+        saveStatus: 'error',
+        statusMessage: `Delete logo failed: ${err?.message || 'Unknown error'}`,
       });
     }
   },

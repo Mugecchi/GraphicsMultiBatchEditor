@@ -107,8 +107,21 @@ export function computeLogoGroupLayout(
   const maxPerRow = Math.max(1, Math.round(groupProps.max_logos_per_row ?? 6));
   const hAlign = groupProps.alignment || 'center';
   const vAlign = groupProps.vertical_alignment || 'middle';
+  const opticalBalance = Boolean(groupProps.optical_balance || arrangement === 'auto');
 
-  let cols = count;
+  const gapX = innerW * (hSpacePct / 100.0);
+
+  const getEffectiveAr = (item: LogoGroupItem): number => {
+    let ar = item.aspect_ratio || 1.0;
+    if (ar <= 0.01) {
+      const nw = item.natural_width || 100;
+      const nh = item.natural_height || 100;
+      ar = nw / Math.max(1.0, nh);
+    }
+    return Math.max(0.1, Math.min(12.0, ar));
+  };
+
+  const rows: LogoGroupItem[][] = [];
   if (
     arrangement === 'grid' ||
     (count > maxPerRow &&
@@ -116,17 +129,56 @@ export function computeLogoGroupLayout(
       arrangement !== 'space-between' &&
       arrangement !== 'space-around')
   ) {
-    cols = Math.min(count, maxPerRow);
-  }
+    const cols = Math.min(count, maxPerRow);
+    for (let i = 0; i < count; i += cols) {
+      rows.push(visibleLogos.slice(i, i + cols));
+    }
+  } else {
+    const baseSingleH = innerH * (maxLogoHPct / 100.0);
+    const permittedSingleW = innerW * (maxLogoWPct / 100.0);
+    let estTotalW = 0.0;
+    for (const item of visibleLogos) {
+      const ar = getEffectiveAr(item);
+      let optFactor = opticalBalance ? 1.0 / Math.pow(ar, 0.32) : 1.0;
+      optFactor = Math.max(0.55, Math.min(1.3, optFactor));
+      const bh = baseSingleH * optFactor;
+      const bw = Math.min(permittedSingleW, bh * ar);
+      estTotalW += bw * (item.scale_override || 1.0) * (item.width_scale || 1.0);
+    }
+    estTotalW += gapX * Math.max(0, count - 1);
 
-  const rows: LogoGroupItem[][] = [];
-  for (let i = 0; i < count; i += cols) {
-    rows.push(visibleLogos.slice(i, i + cols));
+    let shouldWrap = false;
+    if (count > maxPerRow) {
+      shouldWrap = true;
+    } else if (arrangement === 'auto' && count >= 4 && estTotalW > innerW * 1.35) {
+      shouldWrap = true;
+    } else if (count >= 5 && estTotalW > innerW * 2.35 && innerH >= 60.0) {
+      shouldWrap = true;
+    }
+
+    if (shouldWrap) {
+      let estRows = Math.max(2, Math.floor(estTotalW / Math.max(1.0, innerW * 1.15) + 0.999));
+      if (count > maxPerRow) {
+        estRows = Math.max(estRows, Math.floor((count + maxPerRow - 1) / maxPerRow));
+      }
+      estRows = Math.min(count, Math.max(2, Math.min(4, estRows)));
+      const basePerRow = Math.floor(count / estRows);
+      const rem = count % estRows;
+      let idxCursor = 0;
+      for (let rIdx = 0; rIdx < estRows; rIdx++) {
+        const take = basePerRow + (rIdx < rem ? 1 : 0);
+        if (take > 0) {
+          rows.push(visibleLogos.slice(idxCursor, idxCursor + take));
+          idxCursor += take;
+        }
+      }
+    } else {
+      rows.push(visibleLogos);
+    }
   }
 
   const numRows = rows.length;
-  const gapX = innerW * (hSpacePct / 100.0);
-  const gapY = numRows > 1 ? innerH * (vSpacePct / 100.0) : 0.0;
+  let gapY = numRows > 1 ? innerH * (vSpacePct / 100.0) : 0.0;
 
   const totalVGaps = gapY * (numRows - 1);
   const availRowH = Math.max(4.0, (innerH - totalVGaps) / numRows);
@@ -144,6 +196,7 @@ export function computeLogoGroupLayout(
     items: SizedEntry[];
     totalLogosW: number;
     rowH: number;
+    stepGap: number;
   }
 
   const rowLayouts: RowLayout[] = [];
@@ -151,34 +204,50 @@ export function computeLogoGroupLayout(
     const nRow = rowItems.length;
     const sizedItems: SizedEntry[] = [];
     for (const item of rowItems) {
-      let ar = item.aspect_ratio || 1.0;
-      if (ar <= 0.01) {
-        const nw = item.natural_width || 100;
-        const nh = item.natural_height || 100;
-        ar = nw / Math.max(1.0, nh);
-      }
+      const ar = getEffectiveAr(item);
       const scaleMult = item.scale_override || 1.0;
       const wScale = item.width_scale || 1.0;
       const hScale = item.height_scale || 1.0;
 
-      let baseH = permittedH;
+      let optFactor = opticalBalance ? 1.0 / Math.pow(ar, 0.32) : 1.0;
+      optFactor = Math.max(0.55, Math.min(1.3, optFactor));
+
+      let baseH = permittedH * optFactor;
       let baseW = baseH * ar;
       if (baseW > permittedW) {
         baseW = permittedW;
         baseH = baseW / ar;
       }
 
-      const h = Math.max(4.0, baseH * scaleMult * hScale);
-      const w = Math.max(4.0, baseW * scaleMult * wScale);
+      let h = Math.max(4.0, baseH * scaleMult * hScale);
+      let w = Math.max(4.0, baseW * scaleMult * wScale);
+
+      if (w > innerW) {
+        const clampS = innerW / w;
+        w *= clampS;
+        h *= clampS;
+      }
+      if (h > availRowH) {
+        const clampS = availRowH / h;
+        w *= clampS;
+        h *= clampS;
+      }
+
       sizedItems.push({ item, w, h, ar });
     }
 
     const minGap = gapX;
     let totalLogosW = sizedItems.reduce((acc, x) => acc + x.w, 0);
-    const totalGapsW = minGap * Math.max(0, nRow - 1);
+    let totalGapsW = minGap * Math.max(0, nRow - 1);
+    let rowStepGap = minGap;
 
     if (totalLogosW + totalGapsW > innerW && totalLogosW > 0) {
-      const availForLogos = Math.max(4.0 * nRow, innerW - totalGapsW);
+      const maxAllowedGapsW = innerW * 0.22;
+      if (totalGapsW > maxAllowedGapsW && nRow > 1) {
+        rowStepGap = maxAllowedGapsW / (nRow - 1);
+        totalGapsW = rowStepGap * (nRow - 1);
+      }
+      const availForLogos = Math.max(2.0 * nRow, innerW - totalGapsW);
       const shrinkFactor = availForLogos / totalLogosW;
       for (const x of sizedItems) {
         x.w *= shrinkFactor;
@@ -188,11 +257,25 @@ export function computeLogoGroupLayout(
     }
 
     const rowH = sizedItems.reduce((maxH, x) => Math.max(maxH, x.h), 0) || permittedH;
-    rowLayouts.push({ items: sizedItems, totalLogosW, rowH });
+    rowLayouts.push({ items: sizedItems, totalLogosW, rowH, stepGap: rowStepGap });
   }
 
-  const totalContentH =
+  let totalContentH =
     rowLayouts.reduce((acc, r) => acc + r.rowH, 0) + gapY * Math.max(0, numRows - 1);
+  if (totalContentH > innerH && totalContentH > 0) {
+    const vShrink = innerH / totalContentH;
+    gapY *= vShrink;
+    for (const rInfo of rowLayouts) {
+      rInfo.rowH *= vShrink;
+      for (const x of rInfo.items) {
+        x.w *= vShrink;
+        x.h *= vShrink;
+      }
+      rInfo.totalLogosW = rInfo.items.reduce((acc, x) => acc + x.w, 0);
+    }
+    totalContentH =
+      rowLayouts.reduce((acc, r) => acc + r.rowH, 0) + gapY * Math.max(0, numRows - 1);
+  }
 
   let currY = innerY;
   if (vAlign === 'top') {
@@ -205,11 +288,11 @@ export function computeLogoGroupLayout(
 
   const results: PositionedLogoItem[] = [];
   for (const rInfo of rowLayouts) {
-    const { items: sizedItems, totalLogosW, rowH } = rInfo;
+    const { items: sizedItems, totalLogosW, rowH, stepGap: baseStepGap } = rInfo;
     const nRow = sizedItems.length;
 
     let currX = innerX;
-    let stepGap = gapX;
+    let stepGap = baseStepGap;
 
     if (arrangement === 'space-between' && nRow > 1) {
       stepGap = Math.max(0.0, (innerW - totalLogosW) / (nRow - 1));
@@ -220,12 +303,16 @@ export function computeLogoGroupLayout(
       currX = innerX + unitSpace;
       stepGap = unitSpace * 2.0;
     } else {
-      stepGap = gapX;
-      const rowTotalW = totalLogosW + stepGap * Math.max(0, nRow - 1);
-      if (arrangement === 'centered' || hAlign === 'center') {
-        currX = innerX + (innerW - rowTotalW) / 2.0;
+      stepGap = baseStepGap;
+      let rowTotalW = totalLogosW + stepGap * Math.max(0, nRow - 1);
+      if (rowTotalW > innerW && nRow > 1) {
+        stepGap = Math.max(0.0, (innerW - totalLogosW) / (nRow - 1));
+        rowTotalW = totalLogosW + stepGap * (nRow - 1);
+      }
+      if (arrangement === 'centered' || arrangement === 'auto' || hAlign === 'center') {
+        currX = innerX + Math.max(0.0, (innerW - rowTotalW) / 2.0);
       } else if (hAlign === 'right') {
-        currX = innerX + (innerW - rowTotalW);
+        currX = innerX + Math.max(0.0, innerW - rowTotalW);
       } else {
         currX = innerX;
       }

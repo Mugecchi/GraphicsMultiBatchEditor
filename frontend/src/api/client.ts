@@ -116,6 +116,13 @@ export const api = {
     return handleResponse<ProjectData>(res);
   },
 
+  async deleteLogo(projectId: string, assetId: string): Promise<ProjectData> {
+    const res = await fetch(`/api/projects/${projectId}/logos/${assetId}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<ProjectData>(res);
+  },
+
   async duplicateProject(projectId: string, newName?: string): Promise<ProjectData> {
     const query = newName ? `?new_name=${encodeURIComponent(newName)}` : '';
     const res = await fetch(`/api/projects/${projectId}/duplicate${query}`, {

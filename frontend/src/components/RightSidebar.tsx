@@ -22,6 +22,7 @@ import {
   Italic,
   Lock,
   RotateCcw,
+  Search,
   Trash2,
   Underline,
   Ungroup,
@@ -61,6 +62,7 @@ export const RightSidebar: React.FC = () => {
   const [draggedSidebarLogoId, setDraggedSidebarLogoId] = useState<string | null>(null);
   const [dragOverSidebarLogoId, setDragOverSidebarLogoId] = useState<string | null>(null);
   const [canDragLogoId, setCanDragLogoId] = useState<string | null>(null);
+  const [sidebarLogoSearch, setSidebarLogoSearch] = useState('');
 
   if (!project) return null;
 
@@ -774,6 +776,7 @@ export const RightSidebar: React.FC = () => {
                     }
                     className="w-full px-2 py-1.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-700 font-semibold text-sky-400"
                   >
+                    <option value="auto">✨ Smart Auto-Fit (Best Visual Balance)</option>
                     <option value="horizontal">1. Horizontal (Single Row)</option>
                     <option value="grid">2. Grid (Multi-Row & Columns)</option>
                     <option value="centered">3. Centered Arrangement</option>
@@ -781,6 +784,32 @@ export const RightSidebar: React.FC = () => {
                     <option value="space-around">5. Space Around (Balanced Outer/Inner)</option>
                   </select>
                 </div>
+
+                <label className="flex items-center justify-between gap-2 p-2 rounded-lg bg-sky-500/10 border border-sky-500/25 cursor-pointer text-[11px]">
+                  <div>
+                    <div className="font-semibold text-sky-400">
+                      Optical Shape Balance (Rectangles + Circles)
+                    </div>
+                    <div className="text-[9px] text-slate-400">
+                      Balances wide rectangular banners with round/square seals so none look oversized or cut off
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(gp.optical_balance || gp.arrangement === 'auto')}
+                    onChange={(e) =>
+                      updateElementNested(
+                        el.id,
+                        (d) => {
+                          d.logo_group_props!.optical_balance = e.target.checked;
+                          return d;
+                        },
+                        true
+                      )
+                    }
+                    className="accent-sky-500 w-4 h-4 shrink-0"
+                  />
+                </label>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -970,9 +999,37 @@ export const RightSidebar: React.FC = () => {
                       );
                     }
 
+                    const visibleSidebarLogos = activeLogosList.filter((item) => {
+                      const q = sidebarLogoSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return item.name.toLowerCase().includes(q);
+                    });
+
                     return (
-                      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                        {activeLogosList.map((item, idx) => {
+                      <div className="space-y-2">
+                        {activeLogosList.length > 2 && (
+                          <div className="relative">
+                            <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" />
+                            <input
+                              type="text"
+                              placeholder="Search active logos..."
+                              value={sidebarLogoSearch}
+                              onChange={(e) => setSidebarLogoSearch(e.target.value)}
+                              className="w-full pl-7 pr-6 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] outline-none focus:border-sky-500"
+                            />
+                            {sidebarLogoSearch && (
+                              <button
+                                type="button"
+                                onClick={() => setSidebarLogoSearch('')}
+                                className="absolute right-2 top-1 text-[10px] text-slate-400 hover:text-slate-200"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                          {visibleSidebarLogos.map((item, idx) => {
                           const scalePct = Math.round((item.scale_override ?? 1) * 100);
                           const wScalePct = Math.round((item.width_scale ?? 1) * 100);
                           const hScalePct = Math.round((item.height_scale ?? 1) * 100);
@@ -1251,6 +1308,7 @@ export const RightSidebar: React.FC = () => {
                             </div>
                           );
                         })}
+                        </div>
                       </div>
                     );
                   })()}

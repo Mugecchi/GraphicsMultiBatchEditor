@@ -879,6 +879,72 @@ def trim_all_project_logos(
     return row_to_project_dict(updated_row)
 
 
+@app.delete("/api/projects/{project_id}/logos/{asset_id}")
+def delete_project_logo(project_id: str, asset_id: str) -> Dict[str, Any]:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        proj = row_to_project_dict(row)
+
+    assets: List[Dict[str, Any]] = proj.get("assets") or []
+    target_asset = next((a for a in assets if a.get("id") == asset_id), None)
+    if not target_asset:
+        raise HTTPException(status_code=404, detail="Logo asset not found.")
+
+    rel_path = target_asset.get("relative_path", "")
+    if rel_path:
+        full_path = STORAGE_DIR / rel_path
+        try:
+            if full_path.exists():
+                full_path.unlink()
+        except Exception:
+            pass
+
+    proj["assets"] = [a for a in assets if a.get("id") != asset_id]
+
+    next_elements: List[Dict[str, Any]] = []
+    for el in proj.get("elements") or []:
+        if el.get("type") == "logo_group" and el.get("logo_group_props"):
+            el["logo_group_props"]["logos"] = [
+                lg
+                for lg in (el["logo_group_props"].get("logos") or [])
+                if lg.get("asset_id") != asset_id
+            ]
+            next_elements.append(el)
+        elif el.get("type") == "logo" and el.get("logo_props"):
+            if el["logo_props"].get("asset_id") == asset_id:
+                continue
+            next_elements.append(el)
+        else:
+            next_elements.append(el)
+    proj["elements"] = next_elements
+
+    for ev in proj.get("events") or []:
+        if ev.get("logos"):
+            ev["logos"] = [lg for lg in ev["logos"] if lg.get("asset_id") != asset_id]
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE projects
+            SET assets_json = ?, elements_json = ?, events_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                json.dumps(proj["assets"]),
+                json.dumps(proj["elements"]),
+                json.dumps(proj["events"]),
+                now_iso(),
+                project_id,
+            ),
+        )
+        conn.commit()
+        updated_row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+
+    return row_to_project_dict(updated_row)
+
+
 @app.post("/api/projects/{project_id}/duplicate")
 def duplicate_project(project_id: str, new_name: Optional[str] = Query(None)) -> Dict[str, Any]:
     with get_conn() as conn:
